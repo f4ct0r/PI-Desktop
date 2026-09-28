@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.10",
+    "date": "2026-09-28",
+    "highlights": [
+      "Los plugins del mercado aparecen ahora en orden aleatorio en lugar de alfabético.",
+    ],
+  },
+
+  {
     "version": "0.15.9",
     "date": "2026-09-27",
     "highlights": [

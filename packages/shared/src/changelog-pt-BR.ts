@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.15.10",
+    "date": "2026-09-28",
+    "highlights": [
+      "Os plugins do marketplace agora aparecem em ordem aleatória, em vez de alfabética.",
+    ],
+  },
+
+  {
     "version": "0.15.9",
     "date": "2026-09-27",
     "highlights": [

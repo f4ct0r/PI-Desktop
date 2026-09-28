@@ -30,6 +30,14 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.15.10",
+    date: "2026-09-28",
+    highlights: [
+      "Marketplace plugins now appear in a randomized order instead of alphabetically.",
+    ],
+  },
+
+  {
     version: "0.15.9",
     date: "2026-09-27",
     highlights: [
@@ -851,6 +859,14 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.15.10",
+    date: "2026-09-28",
+    highlights: [
+      "插件市场列表改为随机顺序展示，不再按名称排序。",
+    ],
+  },
+
+  {
     version: "0.15.9",
     date: "2026-09-27",
     highlights: [
@@ -1671,6 +1687,14 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.15.10",
+    date: "2026-09-28",
+    highlights: [
+      "外掛市集改為隨機順序顯示，不再按名稱排序。",
+    ],
+  },
+
   {
     version: "0.15.9",
     date: "2026-09-27",

@@ -871,5 +871,5 @@
 }
 
 .project-delete-dialog-confirm:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--ds-error) 85%, var(--gray-1000));
+  background: color-mix(in oklab, var(--ds-error) 85%, black);
 }

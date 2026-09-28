@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.10",
+    "date": "2026-09-28",
+    "highlights": [
+      "플러그인 마켓플레이스 목록을 이름순 대신 무작위 순서로 표시합니다.",
+    ],
+  },
+
+  {
     version: "0.15.9",
     date: "2026-09-27",
     highlights: [
