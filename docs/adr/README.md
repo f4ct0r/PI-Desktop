@@ -340,6 +340,7 @@ Each ADR includes:
 | 0308 | [Remove the Pull Requests destination and listing tool](0308-remove-pull-requests-destination.md) | Accepted |
 | 0309 | [Remove bundled macOS first-launch guidance](0309-remove-macos-first-launch-artifacts.md) | Accepted (D634; amends D457 / ADR 0296) |
 | 0310 | [Support the legacy HTTP+SSE MCP transport](0310-legacy-http-sse-mcp-transport.md) | Accepted (D635; amends D176 / ADR 0038) |
+| 0311 | [User-authored `@agent` delegation](0311-composer-agent-mention.md) | Accepted for implementation (adds the composer's delegation entry point; no change to the `Task` contract) |
 | turn-process-and-thinking-display | [Turn process and thinking presentation](turn-process-and-thinking-display.md) | Accepted |
 | provider-display-order | [Provider display order](provider-display-order.md) | Accepted |
 | registry-header-variable-spelling | [Remote header variables accept the registry's `{name}` spelling](registry-header-variable-spelling.md) | Proposed |
