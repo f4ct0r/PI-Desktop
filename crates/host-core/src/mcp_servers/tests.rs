@@ -37,6 +37,80 @@ fn validation_accepts_http_endpoints_and_rejects_bad_ids() {
 }
 
 #[test]
+fn an_sse_server_is_stored_and_validated_like_an_http_one() {
+    let dir = tempdir().unwrap();
+    let mut registry = McpServerRegistry::new(dir.path());
+    let record = registry
+        .upsert(McpServerInput {
+            id: "legacy".into(),
+            transport: Some("sse".into()),
+            url: Some("https://mcp.example.com/sse".into()),
+            headers: Some(
+                [("authorization".to_string(), "Bearer x".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..Default::default()
+        })
+        .expect("sse server should be accepted");
+    assert_eq!(record.transport, "sse");
+    assert_eq!(record.url.as_deref(), Some("https://mcp.example.com/sse"));
+
+    // The remote rules are the same for both, so a rejected shape stays rejected.
+    let mut config = McpConfig {
+        id: "legacy".into(),
+        label: "Legacy".into(),
+        transport: "sse".into(),
+        url: Some("https://mcp.example.com/sse".into()),
+        command: Some("node".into()),
+        ..Default::default()
+    };
+    assert!(McpServerRegistry::validate_config(&config).is_err());
+    config.command = None;
+    config.url = None;
+    assert!(McpServerRegistry::validate_config(&config).is_err());
+    config.url = Some("ftp://mcp.example.com/sse".into());
+    assert!(McpServerRegistry::validate_config(&config).is_err());
+    config.url = Some("https://mcp.example.com/sse".into());
+    assert!(McpServerRegistry::validate_config(&config).is_ok());
+
+    let mut unknown = config.clone();
+    unknown.transport = "websocket".into();
+    assert!(McpServerRegistry::validate_config(&unknown).is_err());
+}
+
+#[test]
+fn editing_an_sse_server_keeps_its_url_and_headers() {
+    let dir = tempdir().unwrap();
+    let mut registry = McpServerRegistry::new(dir.path());
+    registry
+        .upsert(McpServerInput {
+            id: "legacy".into(),
+            transport: Some("sse".into()),
+            url: Some("https://mcp.example.com/sse".into()),
+            headers: Some(
+                [("authorization".to_string(), "Bearer x".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..Default::default()
+        })
+        .unwrap();
+    // Switching the transport to stdio must not silently carry the remote
+    // fields over, exactly as it must not for http.
+    let error = registry
+        .upsert(McpServerInput {
+            id: "legacy".into(),
+            transport: Some("stdio".into()),
+            url: Some("https://mcp.example.com/sse".into()),
+            command: Some("node".into()),
+            ..Default::default()
+        })
+        .expect_err("stdio must not accept a url");
+    assert!(error.to_string().contains("must not set url or headers"));
+}
+
+#[test]
 fn config_round_trips_without_activation_fields() {
     let config = McpConfig {
         id: "files".into(),

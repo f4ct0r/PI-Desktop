@@ -1309,6 +1309,7 @@ D193, and D194.
 | D189 | Plan checkpoint artifact, approval, and execution epoch | **The same pi Agent uses `Agent | Plan`, with Agent default. Plan calls `SubmitPlan(title, markdown, question)` as the only tool in its assistant batch. Rust host-core writes the submitted Markdown bytes unchanged to a new immutable unique file under `<workspaceRoot>/.pi/plan/*.md`; it stores the relative artifact path, SHA-256, and byte size together with structured title/question fields in the existing `plan_approvals` row. No title/question wrapper is added and no prior artifact is replaced. The approval surface displays title, question, an artifact opener, absolute expiry, and status, and offers only Approve or Reject. Approve requires an explicit `ask`, `accept-edits`, or `auto` permission mode, with Ask selected by default; Reject carries no mode. The approval expires at one absolute 30-minute deadline and uses `PLAN_APPROVAL_TIMEOUT`. The same `plan_approvals` row carries `execution_id` and `execution_state` through `queued → running → completed|interrupted`. A startup transaction marks prior pending approvals and queued/running execution states interrupted before serving RPC; no work is replayed. Pending interruption/rejection/expiry leaves the session Plan; an already-approved queued/running interruption leaves the session Agent. One active turn, idle-only configuration, and one pending approval/queued-or-running execution per session are enforced. Scheduled Plan is rejected before provider, artifact, or queue work with `PLAN_REQUIRES_INTERACTIVE_SESSION`. Protocol v9 and storage schema v10 carry the contract without a serialized process-epoch field.** | Immutable host artifacts preserve the submitted checkpoint while one approval/execution row and a startup process fence prevent restart replay without losing the already-approved Agent state |
 | D190 | Selectable command shell catalog and execution identity | **Host-core exposes stable platform-aware catalog IDs: `windows-powershell`, `cmd`, `git-bash`, and `bash`; the platform catalog contains only IDs supported by that platform. `defaultCommandShell` persists in host settings, and settings writes reject unavailable or wrong-platform IDs. If a persisted choice later becomes unavailable, the effective shell intentionally falls back to the first available platform shell. The `Bash` tool and `tools.execute` protocol name remain unchanged; each turn pins the effective shell ID and dialect, and host rejects a stale ID/dialect before spawn with `COMMAND_SHELL_CHANGED`. Shell identity is the catalog selection, not an executable path hash. Bash streams stdout and stderr separately, uses a mandatory 60-second default timeout with a 1–300 second override, and cancellation/timeout shuts down the complete process tree.** | Users can choose the command language without multiplying protocol tools, while platform validation, explicit fallback, and turn-pinned catalog identity keep execution predictable |
 | D604 | Trust the network endpoints the user enters themselves | **Amend ADR 0243 / 0245 / 0247 for user-supplied URLs; follow ADR 0142 / 0257 / 0300. A URL the person typed into a settings field — a market source, a git remote, an MCP OAuth endpoint, a generated-image URL — is judged by the user-endpoint policy: loopback, RFC1918, CGNAT, link-local, ULA, site-local and `.local` are reachable, and plain `http` is usable. ONE switch decides that: `networkPolicy.mode` (`relaxed` / `strict`), **`relaxed` by default**, which folds in the earlier per-surface acknowledgements — the plaintext flag, the WebDAV `allowInsecureHttp` checkbox and the `networkProxy.allowFakeIp` opt-in are gone, and a stored `allowInsecureUserEndpoints: false` migrates to `strict`. The first plaintext hop to a user endpoint tells the shell once (`insecureNoticeAcknowledged`). Third-party content keeps the public-only rule in either mode, with the checked address pinned: a registry record, a catalog body, a document URL inside a catalog, and every redirect target. Cloud metadata, `unspecified`, multicast, reserved and documentation addresses stay refused on every input. The default proxy bypass list gains `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16`. No host protocol or storage schema bump: `networkPolicy` is one section in the existing app settings, validated on write.** | Refusing a LAN address the user typed did not remove the request — it moved the same work into a shell or a browser next to the app, so the boundary cost the feature without preventing a decision the user had already made. Third-party content is where the SSRF risk lives, so that half of the boundary is unchanged. See ADR 0304. |
+| D635 | Legacy HTTP+SSE MCP transport | **`transport` accepts `sse` alongside `stdio` and `http` across the Plugin SDK contribution, user MCP server records, and marketplace catalog entries, with `sse` taking the same `url` / `headers` fields and the same URL policy as `http` (ADR 0142). The client opens a long-lived `GET` event stream, sends each message to the `endpoint` event the server announces, and reads replies from that open stream; a missing endpoint fails the handshake under the connect budget, and a lost stream ends the session. An announced endpoint must be same-origin with the configured URL, must pass the same `assertUrlAllowed` policy, and must not follow redirects, so a server cannot move the session and its declared credentials to an unconfigured host. The transport contract and one shared incremental event-stream parser move to `apps/desktop/electron/main/mcp-transport.ts`. An import entry declaring `"type": "sse"` imports as `sse` instead of being folded into `http`.** | A meaningful share of deployed MCP servers expose only the legacy HTTP+SSE transport, and the streamable-HTTP client cannot reach them — it `POST`s each message and reads the reply from the response, while such a server answers `202` and delivers the reply on a stream that must already be open, so the call would hang until the budget expires. Import had also folded `sse` into `http`, turning a working config into an unconnectable one with no error. The announced endpoint is the single point where a remote server could redirect this session and its `headers` to a host the user never configured, so it is constrained rather than trusted. |
 
 ## 2026-08-05 — Agent-only mode
 
@@ -7299,3 +7300,36 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   covers native DMG and ZIP archive inspection.
 - D634 amends D457 / ADR 0296 and supersedes the macOS distribution provisions
   of ADR 0232 / ADR 0204. See ADR 0309.
+
+## 2026-09-26 — Legacy HTTP+SSE MCP transport
+
+- `transport` gains a third value, `sse`, wherever it is already validated:
+  the Plugin SDK `contributes.mcpServers` contribution, user MCP server
+  records, and marketplace catalog entries. `sse` takes the same fields as
+  `http` (`url` / `headers`) and obeys the same URL policy, so ADR 0142's
+  non-loopback HTTP disclosure applies unchanged. This widens an existing
+  union; `stdio` and `http` keep their meaning, fields, and budgets.
+- Legacy SSE is a split connection, not a request/response transport: the
+  client opens a long-lived `GET` event stream, the server's first `endpoint`
+  event names the `POST` URL, and replies arrive on the open stream. The
+  stream is opened when the transport is created and the first `send` waits
+  for the endpoint event under the connect budget, so a server that never
+  announces one fails the handshake instead of hanging. Losing the stream
+  ends the session: pending calls fail, the tool catalog is dropped, and the
+  next use reconnects.
+- A server may only announce an endpoint on the configured origin, and that
+  endpoint passes the same `assertUrlAllowed` policy as the stream URL. The
+  `POST` does not follow redirects. The announced endpoint is the one place a
+  remote server could otherwise move this session and its declared `headers`
+  to a host the user never configured, so it is constrained rather than
+  trusted.
+- The transport contract — the JSON-RPC message shape, the `McpTransport`
+  interface, the error shape, and one incremental event-stream parser shared
+  by the buffered and streaming readers — moves to
+  `apps/desktop/electron/main/mcp-transport.ts`. `plugin-mcp.ts` keeps the
+  client, the stdio and streamable-HTTP transports, and the handshake.
+- An import entry declaring `"type": "sse"` now imports as `sse` rather than
+  being folded into `http`, which had produced an unconnectable server with
+  no error at import time.
+- Decision D635; ADR [0310](../../adr/0310-legacy-http-sse-mcp-transport.md)
+  amends D176 / ADR 0038.

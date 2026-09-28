@@ -526,13 +526,13 @@ export function isWindowBackgroundColor(value: unknown): value is string {
 export type PluginMcpServerContrib = {
   id: string;
   label?: string;
-  transport: "stdio" | "http";
+  transport: "stdio" | "http" | "sse";
   /** stdio only: bare PATH name or plugin-relative executable. */
   command?: string;
   args?: string[];
   /** stdio only: literal values, or `{ "setting": "<key>" }` to read plugin settings. */
   env?: Record<string, string | { setting: string }>;
-  /** http only: an absolute `http://` or `https://` endpoint. */
+  /** http/sse only: an absolute `http://` or `https://` endpoint. */
   url?: string;
   headers?: Record<string, string | { setting: string }>;
 };

@@ -7,7 +7,7 @@ import type { McpServerInput } from "./types.js";
  * paste box accepts what the user already has rather than asking them to
  * retype it: a full `{"mcpServers": {...}}` document, the bare map inside it, or
  * a single server object. Keys become ids, `command`/`args`/`env` mean stdio,
- * and `url` means http.
+ * and `url` means a remote server — `http`, or `sse` when the entry says so.
  */
 export type McpImportResult = {
   servers: McpServerInput[];
@@ -54,18 +54,27 @@ function toInput(id: string, raw: Record<string, unknown>): McpServerInput | str
       : undefined;
   const url = typeof raw.url === "string" ? raw.url.trim() : "";
   const command = typeof raw.command === "string" ? raw.command.trim() : "";
-  // `type`/`transport` are advisory: what the entry actually carries decides,
-  // because half the configs in the wild omit the field entirely.
+  // `type`/`transport` is advisory about *whether* the entry is remote, because
+  // half the configs in the wild omit the field entirely. A declared `sse` is
+  // still honored, because sse and streamable http need different connections.
   const declared =
     typeof raw.type === "string"
       ? raw.type.toLowerCase()
       : typeof raw.transport === "string"
         ? raw.transport.toLowerCase()
         : "";
-  const wantsHttp = url ? true : declared.includes("http") || declared.includes("sse");
-  if (wantsHttp) {
-    if (!url) return "an http server requires url";
-    return { id, label, description, transport: "http", url, headers: stringMap(raw.headers) };
+  const wantsSse = declared.includes("sse");
+  const wantsRemote = Boolean(url) || wantsSse || declared.includes("http");
+  if (wantsRemote) {
+    if (!url) return `an ${wantsSse ? "sse" : "http"} server requires url`;
+    return {
+      id,
+      label,
+      description,
+      transport: wantsSse ? "sse" : "http",
+      url,
+      headers: stringMap(raw.headers),
+    };
   }
   if (!command) return "a stdio server requires command";
   return {

@@ -507,7 +507,7 @@ export function AgentMcpPage() {
         name={name}
         off={!server.enabled}
         menuOpen={menuFor === key}
-        command={server.transport === "http" ? server.url : server.command}
+        command={server.transport === "stdio" ? server.command : server.url}
         badges={
           <>
             <span className="agent-capability-badge is-level">
@@ -516,9 +516,13 @@ export function AgentMcpPage() {
                 : t("settings.capabilityFilterProject")}
             </span>
             <span className="agent-capability-badge">
-              {server.transport === "http"
-                ? t("settings.transportHttp")
-                : t("settings.transportStdio")}
+              {t(
+                server.transport === "stdio"
+                  ? "settings.transportStdio"
+                  : server.transport === "sse"
+                    ? "settings.transportSse"
+                    : "settings.transportHttp",
+              )}
             </span>
             {status && status.state !== "idle" ? (
               <span className={cx("agent-capability-badge", "is-status", `is-${status.state}`)}>

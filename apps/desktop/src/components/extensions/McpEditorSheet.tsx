@@ -13,7 +13,7 @@ import {
   type ProjectRecord,
 } from "@pi-desktop/shared";
 import { Button, Field, HelpIcon, Input, SettingsToggle, TooltipButton, cx, portalOverlay } from "../ui";
-import { IconPlay, IconServer, IconTerminal, IconX } from "../icons";
+import { IconActivity, IconPlay, IconServer, IconTerminal, IconX } from "../icons";
 import { ScopeControl } from "./ScopeControl";
 import { KeyValueRows, pairsToRecord, recordToPairs, type KeyValuePair } from "./KeyValueRows";
 import {
@@ -141,10 +141,10 @@ export function draftToInput(
     enabled: draft.enabled,
     scope: draft.scope,
   };
-  if (draft.transport === "http") {
+  if (draft.transport !== "stdio") {
     return {
       ...base,
-      transport: "http",
+      transport: draft.transport,
       url: draft.url.trim(),
       headers: pairsToRecord(draft.headers),
     };
@@ -301,11 +301,18 @@ export function McpEditorSheet({
         icon: <IconServer size={14} />,
         labelKey: "extensions.mcp.transportHttp",
       },
+      {
+        id: "sse",
+        icon: <IconActivity size={14} />,
+        labelKey: "extensions.mcp.transportSse",
+      },
     ],
     [],
   );
+  // A warning about cleartext applies to every remote transport, not just
+  // the one named `http`.
   const insecureHttp =
-    draft.transport === "http" && isNonLoopbackHttpMcpUrl(draft.url.trim());
+    draft.transport !== "stdio" && isNonLoopbackHttpMcpUrl(draft.url.trim());
 
   return portalOverlay(
     <div

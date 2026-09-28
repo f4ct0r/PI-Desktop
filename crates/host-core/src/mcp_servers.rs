@@ -351,16 +351,23 @@ impl McpServerRegistry {
                     bail!("MCP_INVALID: a stdio server must not set url or headers");
                 }
             }
-            "http" => {
+            // `sse` and `http` differ only in connection shape, so every
+            // rule that is about *reaching* a server applies to both.
+            "http" | "sse" => {
                 let url = config
                     .url
                     .as_deref()
                     .filter(|value| !value.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("MCP_INVALID: an http server requires url"))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("MCP_INVALID: a {} server requires url", config.transport)
+                    })?;
                 check_len("url", url)?;
                 check_url(url)?;
                 if config.command.is_some() || !config.args.is_empty() || !config.env.is_empty() {
-                    bail!("MCP_INVALID: an http server must not set command, args or env");
+                    bail!(
+                        "MCP_INVALID: a {} server must not set command, args or env",
+                        config.transport
+                    );
                 }
                 if config.headers.len() > MAX_HEADERS {
                     bail!("MCP_INVALID: at most {MAX_HEADERS} headers");
@@ -372,7 +379,7 @@ impl McpServerRegistry {
                     check_len("headers", value)?;
                 }
             }
-            _ => bail!("MCP_INVALID: transport must be \"stdio\" or \"http\""),
+            _ => bail!("MCP_INVALID: transport must be \"stdio\", \"http\" or \"sse\""),
         }
         Ok(())
     }
@@ -430,9 +437,12 @@ impl McpServerRegistry {
                 .env
                 .or_else(|| previous_same_transport.map(|record| record.env.clone()))
                 .unwrap_or_default();
-        } else if config.transport == "http" {
+        } else if config.transport == "http" || config.transport == "sse" {
             if input.command.is_some() || input.args.is_some() || input.env.is_some() {
-                bail!("MCP_INVALID: an http server must not set command, args or env");
+                bail!(
+                    "MCP_INVALID: a {} server must not set command, args or env",
+                    config.transport
+                );
             }
             config.url = input
                 .url

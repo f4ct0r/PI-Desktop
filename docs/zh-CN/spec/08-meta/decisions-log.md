@@ -1181,6 +1181,7 @@ D193 和 D194。
 | D189 | Plan 检查点工件、批准和执行纪元 | **相同的 pi Agent 使用 `Agent | Plan`, with Agent default. Plan calls `SubmitPlan(标题, markdown, 问题)` as the only tool in its assistant batch. Rust host-core writes the submitted Markdown bytes unchanged to a new immutable unique file under `<workspaceRoot>/.pi/plan/*.md`; it stores the relative artifact path, SHA-256, and byte size together with structured title/question fields in the existing `plan_approvals` row. No title/question wrapper is added and no prior artifact is replaced. The approval surface displays title, question, an artifact opener, absolute expiry, and status, and offers only Approve or Reject. Approve requires an explicit `ask`, `accept-edits`, or `auto` permission mode, with Ask selected by default; Reject carries no mode. The approval expires at one absolute 30-minute deadline and uses `PLAN_APPROVAL_TIMEOUT`. The same `plan_approvals` row carries `execution_id` and `execution_state` through `queued → 运行 → 已完成 | 中断了`. A startup transaction marks prior pending approvals and queued/running execution states interrupted before serving RPC; no work is replayed. Pending interruption/rejection/expiry leaves the session Plan; an already-approved queued/running interruption leaves the session Agent. One active turn, idle-only configuration, and one pending approval/queued-or-running execution per session are enforced. Scheduled Plan is rejected before provider, artifact, or queue work with `PLAN_REQUIRES_INTERACTIVE_SESSION`。协议 v9 和存储模式 v10 携带的合约没有序列化的 process-epoch 字段。** | 不可变的主机工件保留提交的检查点，同时一个 approval/execution 行和启动进程栅栏可防止重新启动重播，而不会丢失已批准的 Agent 状态 |
 | D190 | 可选择的命令 shell 目录和执行标识 | **主机核心公开稳定的平台感知目录 ID：`windows-powershell`、`cmd`、`git-bash` 和 `bash`；平台目录仅包含该平台支持的 ID。 `defaultCommandShell` 保留在主机设置中，并且设置写入拒绝不可用或错误的平台 ID。如果持久选择稍后变得不可用，则有效 shell 会有意回退到第一个可用的平台 shell。 `Bash` 工具和 `tools.execute` 协议名称保持不变；每个回合都会固定有效的 shell ID 和方言，并且主机在使用 `COMMAND_SHELL_CHANGED` 生成之前拒绝过时的 ID/dialect。 Shell 标识是目录选择，而不是可执行路径哈希。 Bash 分别流式传输 stdout 和 stderr，使用强制的 60 秒默认超时和 1-300 秒覆盖，并且 cancellation/timeout 关闭完整的进程树。** | 用户可以选择命令语言，而无需增加协议工具，而平台验证、显式回退和转固定目录身份可保持执行的可预测性 |
 | D604 | 信任用户自己填写的网络端点 | **对用户填写的 URL 修订 ADR 0243 / 0245 / 0247；沿用 ADR 0142 / 0257 / 0300。用户自己在设置里填写的 URL——市场源、git 远端、MCP OAuth 端点、生成图片 URL——改按"用户端点"策略判定：回环、RFC1918、CGNAT、link-local、ULA、site-local 与 `.local` 都可达，明文 `http` 也可用。这一切由**一个**开关决定：`networkPolicy.mode`（`relaxed` / `strict`），**默认 `relaxed`**，并取代此前按界面分散的确认（明文开关、WebDAV 的 `allowInsecureHttp`、`networkProxy.allowFakeIp`），旧的 `allowInsecureUserEndpoints: false` 迁移为 `strict`；首次明文访问会弹一次告知（`insecureNoticeAcknowledged`）。第三方内容在任何模式下仍只允许公网并把校验过的地址固定到连接：registry 记录、目录正文、目录内部的文档 URL、以及每一次重定向目标。云元数据、`unspecified`、multicast、reserved、documentation 在任何输入上一律拒绝。默认代理绕过列表增加 `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16`。不改主机协议、不改存储 schema：`networkPolicy` 只是既有 app settings 里的一个字段，写入时校验。** | 拒绝用户自己填写的局域网地址并没有消除那次请求——它只是把同样的工作搬到应用旁边的 shell 或浏览器里，因此这条边界牺牲了功能，却没有阻止用户已经做出的决定。SSRF 风险在第三方内容那一侧，所以边界的那一半保持不变。见 ADR 0304。 |
+| D635 | 旧版 HTTP+SSE MCP 传输 | **凡校验 `transport` 之处新增 `sse`，与 `stdio`、`http` 并列，覆盖 Plugin SDK 贡献项、用户 MCP 服务器记录与市场目录条目；`sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同（ADR 0142）。客户端打开长连接的 `GET` 事件流，把每条消息发往服务端公布的 `endpoint` 事件地址，并从这条已打开的流上读取应答；缺少 endpoint 会在连接预算内让握手失败，流断开则结束会话。公布的 endpoint 必须与所配置 URL 同源，必须通过同一套 `assertUrlAllowed` 策略，且不得跟随重定向，因此服务端无法把会话及其声明的凭据迁移到用户未配置的主机。传输契约与唯一的增量事件流解析器移至 `apps/desktop/electron/main/mcp-transport.ts`。导入时声明 `"type": "sse"` 的条目导入为 `sse`，不再并入 `http`。** | 相当一部分已部署的 MCP 服务器只提供旧版 HTTP+SSE 传输，而 streamable HTTP 客户端无法触达它们——它为每条消息发起 `POST` 并从响应中读取应答，而这类服务器只回 `202`，并把应答投递到一条必须事先打开的流上，于是调用会一直挂到预算耗尽。导入此前还会把 `sse` 并入 `http`，把一份可用配置变成一个在导入阶段不报错的、无法连接的服务器。公布的 endpoint 是远端服务器唯一可能把本会话及其 `headers` 重定向到用户从未配置的主机上的位置，因此对其加以约束而非信任。 |
 
 ## 2026-08-05 — 仅代理模式
 
@@ -5129,3 +5130,28 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 签名、公证、装订和更新程序通道保持不变。未签名调试工件不代表通过 Gatekeeper 验证。
 - `packaging-footprint.test.mjs` 检查打包配置；E2E-196b 覆盖本机 DMG 与 ZIP 归档检查。
 - D634 修订 D457 / ADR 0296，并取代 ADR 0232 / ADR 0204 中的 macOS 分发约定。见 ADR 0309。
+
+## 2026-09-26 —— 旧版 HTTP+SSE MCP 传输
+
+- 凡校验 `transport` 之处新增第三个取值 `sse`：Plugin SDK 的
+  `contributes.mcpServers` 贡献项、用户 MCP 服务器记录、市场目录条目。
+  `sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同，
+  因此 ADR 0142 的非 loopback 明文 HTTP 提示原样适用。这是在既有联合类型上
+  扩容；`stdio` 与 `http` 的含义、字段和预算均不变。
+- 旧版 SSE 是分离式连接，而非请求/响应式传输：客户端打开一条长连接的 `GET`
+  事件流，服务端的首个 `endpoint` 事件给出 `POST` 地址，应答从这条已打开的流上
+  返回。事件流在传输创建时即打开，首次 `send` 在连接预算内等待 endpoint 事件，
+  因此从不给出该事件的服务端会让握手失败，而不是一直挂起。流断开即结束会话：
+  待处理调用失败、工具目录被清空，下次使用时重连。
+- 服务端只能在与所配置 URL 同源的情况下公布 endpoint，且该 endpoint 必须通过
+  与事件流 URL 相同的 `assertUrlAllowed` 策略；`POST` 不跟随重定向。公布的 endpoint
+  是远端服务器唯一可能把本会话及其声明的 `headers` 迁移到用户从未配置的主机上的
+  位置，因此对其加以约束而非信任。
+- 传输契约——JSON-RPC 消息结构、`McpTransport` 接口、错误结构，以及由缓冲读取器和
+  流式读取器共用的唯一增量事件流解析器——移至
+  `apps/desktop/electron/main/mcp-transport.ts`。`plugin-mcp.ts` 保留客户端、
+  stdio 与 streamable HTTP 传输，以及握手逻辑。
+- 导入时声明 `"type": "sse"` 的条目现在导入为 `sse`，不再被并入 `http`；
+  后者会生成一个无法连接、且导入阶段不报错的服务器。
+- 决策 D635；ADR [0310](/adr/0310-legacy-http-sse-mcp-transport)
+  修订 D176 / ADR 0038。

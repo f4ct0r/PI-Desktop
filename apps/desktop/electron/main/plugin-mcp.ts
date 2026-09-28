@@ -7,10 +7,26 @@ import {
   decodeMcpStderr,
   resolveMcpStdioLaunch,
 } from "./mcp-stdio-launch.ts";
+import {
+  createSseTransport,
+  mcpError,
+  MCP_PROTOCOL_VERSION,
+  parseSseMessages,
+  type JsonRpcMessage,
+  type McpError,
+  type McpTool,
+  type McpTransport,
+  type McpTransportHandlers,
+  type McpTransportKind,
+} from "./mcp-transport.ts";
 import { userLookupPath } from "./user-login-path.ts";
 
-/** MCP revision we advertise during the handshake. */
-export const MCP_PROTOCOL_VERSION = "2025-06-18";
+// Re-exported so the transport contract has one definition while the existing
+// importers of this module keep resolving. `mcpError` stays private to the two
+// transport modules, as it was before the split.
+export { MCP_PROTOCOL_VERSION };
+export type { JsonRpcMessage, McpError, McpTool, McpTransport, McpTransportHandlers };
+
 /** Discovery must finish inside this budget or the server is skipped. */
 export const MCP_CONNECT_TIMEOUT_MS = 10_000;
 /** Kept under the plugin tool budget so the MCP error wins the race. */
@@ -32,43 +48,6 @@ export const MCP_TOOL_DISCOVERY_TIMEOUT_MS = 30_000;
 const MAX_STDIO_LINE_BYTES = 4 * 1024 * 1024;
 /** Guard against a remote MCP server streaming an unbounded response body. */
 const MAX_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
-
-export type McpTool = {
-  name: string;
-  description?: string;
-  inputSchema?: unknown;
-};
-
-export type JsonRpcMessage = {
-  jsonrpc?: string;
-  id?: string | number | null;
-  method?: string;
-  params?: unknown;
-  result?: unknown;
-  error?: { code?: number; message?: string; data?: unknown };
-};
-
-/**
- * Both transports are reduced to "send a message, receive messages", which lets
- * the client speak the same JSON-RPC dialect over a pipe or over HTTP.
- */
-export type McpTransport = {
-  send: (message: JsonRpcMessage, timeoutMs?: number, signal?: AbortSignal) => Promise<void>;
-  close: () => void;
-};
-
-export type McpTransportHandlers = {
-  onMessage: (message: JsonRpcMessage) => void;
-  onClose: (reason: string) => void;
-};
-
-type McpError = Error & { code?: string };
-
-function mcpError(code: string, message: string): McpError {
-  const error = new Error(message) as McpError;
-  error.code = code;
-  return error;
-}
 
 /**
  * Environment for a stdio MCP server: the host's own env carries provider keys
@@ -266,25 +245,6 @@ function createStdioTransport(
     close: stopChild,
   };
 }
-
-function parseSseMessages(body: string): JsonRpcMessage[] {
-  const out: JsonRpcMessage[] = [];
-  for (const block of body.split(/\n\n/)) {
-    const data = block
-      .split(/\n/)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trim())
-      .join("");
-    if (!data) continue;
-    try {
-      out.push(JSON.parse(data) as JsonRpcMessage);
-    } catch {
-      // A partial event is not actionable; the request times out instead.
-    }
-  }
-  return out;
-}
-
 
 async function readBoundedHttpBody(response: Response): Promise<string> {
   const contentLength = Number(response.headers.get("content-length"));
@@ -489,7 +449,7 @@ export type McpServerClientOptions = {
  */
 export class McpServerClient {
   readonly serverId: string;
-  readonly transportKind: "stdio" | "http";
+  readonly transportKind: McpTransportKind;
   private opts: McpServerClientOptions;
   private transport: McpTransport | null = null;
   private pending = new Map<
@@ -641,16 +601,18 @@ export class McpServerClient {
         handlers,
       );
     }
-    return createHttpTransport(
-      {
-        url: String(this.opts.server.url ?? ""),
-        headers: this.opts.values,
-        timeoutMs,
-        fetchImpl: this.opts.fetchImpl,
-        assertUrlAllowed: this.opts.assertUrlAllowed,
-      },
-      handlers,
-    );
+    const remote = {
+      headers: this.opts.values,
+      timeoutMs,
+      fetchImpl: this.opts.fetchImpl,
+      assertUrlAllowed: this.opts.assertUrlAllowed,
+      url: String(this.opts.server.url ?? ""),
+    };
+    // `sse` and `http` take the same url and headers; only the shape of the
+    // connection differs, so they are selected together.
+    return this.opts.server.transport === "sse"
+      ? createSseTransport(remote, handlers)
+      : createHttpTransport(remote, handlers);
   }
 
   /**

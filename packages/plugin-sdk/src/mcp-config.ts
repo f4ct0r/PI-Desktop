@@ -66,11 +66,10 @@ export function validateMcpServer(raw: unknown): McpValidationResult {
   if (typeof server.id !== "string" || !MCP_SERVER_ID.test(server.id)) {
     return { ok: false, error: "mcp server id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}" };
   }
-  if (server.transport !== "stdio" && server.transport !== "http") {
-    return { ok: false, error: `mcp server "${server.id}" transport must be "stdio" or "http"` };
+  if (server.transport !== "stdio" && server.transport !== "http" && server.transport !== "sse") {
+    return { ok: false, error: `mcp server "${server.id}" transport must be "stdio", "http" or "sse"` };
   }
   const label = `mcp server "${server.id}"`;
-
   if (server.transport === "stdio") {
     if (server.url !== undefined || server.headers !== undefined) {
       return { ok: false, error: `${label} must not set url or headers` };

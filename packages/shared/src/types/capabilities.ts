@@ -33,7 +33,7 @@ export type AgentCapabilityMove = {
 };
 
 /** Transport of an MCP server the user configured themselves. */
-export type McpTransport = "stdio" | "http";
+export type McpTransport = "stdio" | "http" | "sse";
 
 /**
  * An MCP server the user added directly, without a plugin around it.
@@ -59,7 +59,7 @@ export type McpServerRecord = {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
-  /** http: absolute endpoint; HTTP is allowed for local and LAN servers. */
+  /** http/sse: absolute endpoint; HTTP is allowed for local and LAN servers. */
   url?: string;
   headers?: Record<string, string>;
   enabled: boolean;

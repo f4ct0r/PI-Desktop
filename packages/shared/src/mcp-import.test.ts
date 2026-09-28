@@ -45,6 +45,23 @@ describe("parseMcpImport", () => {
   });
 
   // A `url` is the only reliable signal: half the configs in the wild omit `type`.
+  // A declared `sse` must survive the import: sse and streamable http need
+  // different connections, so collapsing them to http would break the server.
+  it("keeps a declared sse transport as sse", () => {
+    const result = parseMcpImport(
+      '{"mcpServers": {"legacy": {"type": "sse", "url": "https://mcp.example.com/sse"}}}',
+    );
+    expect(result.servers[0]).toMatchObject({ id: "legacy", transport: "sse" });
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("reads a transport field as well as a type field", () => {
+    const result = parseMcpImport(
+      '{"mcpServers": {"legacy": {"transport": "SSE", "url": "https://mcp.example.com/sse"}}}',
+    );
+    expect(result.servers[0]).toMatchObject({ transport: "sse" });
+  });
+
   it("infers http from a url even with no declared type", () => {
     const result = parseMcpImport(
       '{"mcpServers": {"remote": {"url": "https://mcp.example.com/sse", "headers": {"Authorization": "Bearer x"}}}}',
@@ -62,7 +79,9 @@ describe("parseMcpImport", () => {
   it("honours a declared sse type that carries no url by reporting it", () => {
     const result = parseMcpImport('{"mcpServers": {"broken": {"type": "sse"}}}');
     expect(result.servers).toEqual([]);
-    expect(result.skipped).toEqual([{ id: "broken", reason: "an http server requires url" }]);
+    // The reason names the transport the entry actually declared; folding sse
+    // into http here is what would hide the difference from the user.
+    expect(result.skipped).toEqual([{ id: "broken", reason: "an sse server requires url" }]);
   });
 
   it("reports a stdio entry with no command instead of importing it", () => {

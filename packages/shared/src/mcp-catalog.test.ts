@@ -354,6 +354,44 @@ describe("header-local token bindings", () => {
       { "X-Test": { "{input}": { input: 3 } } },
       { "X-Test": { invalid: { value: "literal" } } },
     ]) expect(catalogEntryError({ ...entry, headerBindings })).not.toBeNull();
-    expect(catalogEntryError({ ...entry, transport: "stdio", command: "node" })).toContain("requires http");
+    expect(catalogEntryError({ ...entry, transport: "stdio", command: "node" })).toContain(
+      "headerBindings requires a remote transport",
+    );
+  });
+});
+
+describe("sse catalog entries", () => {
+  const sseEntry: McpCatalogEntry = {
+    id: "legacy-remote",
+    name: "Legacy Remote",
+    transport: "sse",
+    url: "https://mcp.example.com/sse",
+    headers: { Authorization: "Bearer ${TOKEN}" },
+    requiredEnv: [{ name: "TOKEN" }],
+  };
+
+  it("is accepted and resolved like an http entry", () => {
+    expect(catalogEntryError(sseEntry)).toBeNull();
+    expect(resolveCatalogEntry(sseEntry, { TOKEN: "t0ken" })).toEqual({
+      id: "legacy-remote",
+      label: "Legacy Remote",
+      description: undefined,
+      enabled: true,
+      transport: "sse",
+      url: "https://mcp.example.com/sse",
+      headers: { Authorization: "Bearer t0ken" },
+    });
+  });
+
+  it("collects header placeholders the same way as http", () => {
+    expect(collectCatalogPlaceholders(sseEntry)).toEqual(["TOKEN"]);
+  });
+
+  it("still requires a public https url and rejects an unknown transport", () => {
+    expect(catalogEntryError({ ...sseEntry, url: undefined })).toContain("sse requires url");
+    expect(catalogEntryError({ ...sseEntry, url: "http://mcp.example.com/sse" })).toContain(
+      "catalog endpoints must be https",
+    );
+    expect(catalogEntryError({ ...sseEntry, transport: "ws" })).toContain("transport is invalid");
   });
 });

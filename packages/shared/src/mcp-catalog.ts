@@ -31,7 +31,7 @@ export type McpCatalogEntry = {
   homepage?: string;
   categories?: McpCatalogCategory[];
   verified?: boolean;
-  transport: "stdio" | "http";
+  transport: "stdio" | "http" | "sse";
   /** stdio template. `${NAME}` placeholders allowed throughout. */
   command?: string;
   args?: string[];
@@ -81,10 +81,21 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
 }
 
+/**
+ * Whether a transport reaches a server over the network.
+ *
+ * `http` and `sse` differ only in how the connection is shaped, so every rule
+ * that is about *reaching* a server — url, headers, HTTPS — applies to both.
+ * Written once so a new remote transport cannot be half-supported here.
+ */
+function isRemoteTransport(transport: unknown): boolean {
+  return transport === "http" || transport === "sse";
+}
+
 function requiredEnvError(value: unknown, id: string, transport: unknown): string | null {
   if (!Array.isArray(value)) return `${id}: requiredEnv must be an array`;
   const names = new Set<string>();
-  const namePattern = transport === "http" ? VARIABLE_NAME : ENV_NAME;
+  const namePattern = isRemoteTransport(transport) ? VARIABLE_NAME : ENV_NAME;
   for (const item of value) {
     if (!isRecord(item)) return `${id}: requiredEnv items must be objects`;
     if (typeof item.name !== "string" || !namePattern.test(item.name)) {
@@ -126,7 +137,9 @@ function entryShapeError(value: unknown): string | null {
   const id = typeof value.id === "string" ? value.id : "unknown";
   if (typeof value.id !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.id)) return `bad id: ${id}`;
   if (typeof value.name !== "string" || !value.name.trim()) return `${id}: name is required`;
-  if (value.transport !== "stdio" && value.transport !== "http") return `${id}: transport is invalid`;
+  if (value.transport !== "stdio" && !isRemoteTransport(value.transport)) {
+    return `${id}: transport is invalid`;
+  }
 
   if (value.categories !== undefined) {
     if (!Array.isArray(value.categories) || !value.categories.every((category) => typeof category === "string" && CATALOG_CATEGORIES.has(category as McpCatalogCategory))) {
@@ -137,7 +150,7 @@ function entryShapeError(value: unknown): string | null {
   if (value.env !== undefined && !isStringRecord(value.env)) return `${id}: env must be an object of strings`;
   if (value.headers !== undefined && !isStringRecord(value.headers)) return `${id}: headers must be an object of strings`;
   if (value.headerBindings !== undefined) {
-    if (value.transport !== "http") return `${id}: headerBindings requires http transport`;
+    if (!isRemoteTransport(value.transport)) return `${id}: headerBindings requires a remote transport`;
     const error = headerBindingsError(value.headerBindings, value.headers, id);
     if (error) return error;
   }
@@ -155,7 +168,7 @@ function entryShapeError(value: unknown): string | null {
 
 function templateStrings(entry: McpCatalogEntry): string[] {
   if (!isRecord(entry)) return [];
-  if (entry.transport === "http") {
+  if (isRemoteTransport(entry.transport)) {
     return [
       typeof entry.url === "string" ? entry.url : "",
       ...(isStringRecord(entry.headers) ? Object.values(entry.headers) : []),
@@ -182,7 +195,7 @@ export function collectCatalogPlaceholders(entry: McpCatalogEntry): string[] {
       }
     }
   };
-  if (entry.transport === "http") {
+  if (isRemoteTransport(entry.transport)) {
     collect(entry.url ?? "", ENV_PLACEHOLDER);
     for (const [header, template] of Object.entries(entry.headers ?? {})) {
       collect(template, HEADER_PLACEHOLDER, bindingsForHeader(entry, header));
@@ -212,7 +225,7 @@ export function catalogEntryError(entry: McpCatalogEntry | unknown): string | nu
     if (!candidate.command?.trim()) return `${candidate.id}: stdio requires command`;
     if (candidate.command.includes("..")) return `${candidate.id}: command must not contain ..`;
   } else {
-    if (!candidate.url) return `${candidate.id}: http requires url`;
+    if (!candidate.url) return `${candidate.id}: ${candidate.transport} requires url`;
     let parsed: URL;
     try {
       parsed = new URL(candidate.url);
@@ -266,13 +279,18 @@ export function resolveCatalogEntry(
     description: entry.description,
     enabled: true,
   };
-  if (entry.transport === "http") {
+  if (isRemoteTransport(entry.transport)) {
     const headers: Record<string, string> = {};
     for (const [key, template] of Object.entries(entry.headers ?? {})) {
       const value = fill(template, HEADER_PLACEHOLDER, bindingsForHeader(entry, key));
       if (value) headers[key] = value;
     }
-    return { ...base, transport: "http", url: fill(entry.url!, ENV_PLACEHOLDER), headers };
+    return {
+      ...base,
+      transport: entry.transport,
+      url: fill(entry.url!, ENV_PLACEHOLDER),
+      headers,
+    };
   }
   const env: Record<string, string> = {};
   for (const [key, template] of Object.entries(entry.env ?? {})) {

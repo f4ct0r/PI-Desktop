@@ -85,6 +85,32 @@ describe("validateMcpServer (http)", () => {
   });
 });
 
+describe("validateMcpServer (sse)", () => {
+  it("accepts an sse endpoint with the same rules as http", () => {
+    expect(
+      validateMcpServer({
+        id: "legacy",
+        transport: "sse",
+        url: "https://example.com/sse",
+        headers: { Authorization: { setting: "apiKey" } },
+      }).ok,
+    ).toBe(true);
+    expect(validateMcpServer({ id: "a", transport: "sse", url: "http://127.0.0.1:3000/sse" }).ok).toBe(
+      true,
+    );
+  });
+
+  it("applies the remote rules: url required, no command, http or https only", () => {
+    expect(error({ id: "a", transport: "sse" })).toMatch(/requires url/);
+    expect(error({ id: "a", transport: "sse", url: "https://x", command: "y" })).toMatch(
+      /must not set command, args or env/,
+    );
+    expect(error({ id: "a", transport: "sse", url: "file:///etc/passwd" })).toMatch(
+      /http or https/,
+    );
+  });
+});
+
 describe("validateMcpServer (shape)", () => {
   it("rejects bad ids and transports", () => {
     expect(error({ id: "9bad", transport: "stdio", command: "x" })).toMatch(/id must match/);
