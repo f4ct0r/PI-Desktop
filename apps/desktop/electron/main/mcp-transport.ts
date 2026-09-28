@@ -1,7 +1,22 @@
 import type { PluginMcpServerContrib } from "@pi-desktop/plugin-sdk";
+import { APP_NAME, APP_VERSION } from "@pi-desktop/shared";
 
 /** MCP revision we advertise during the handshake. */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
+
+/**
+ * The `User-Agent` every MCP request announces.
+ *
+ * Main-process `fetch` is Electron's `net.fetch`, which is Chromium's network
+ * stack and therefore sends a `Mozilla/... Chrome/... Electron/...` agent
+ * unless one is set explicitly. Local MCP servers guard against DNS rebinding
+ * by refusing anything that looks browser-originated — Burp's MCP server
+ * answers such a request `403` before the protocol is ever spoken — and this
+ * app is a desktop client, not a page. Naming it honestly is both the truth
+ * and what every real MCP client does: the reference SDKs send `node` and
+ * `python-httpx/...`, never a `Mozilla` agent.
+ */
+export const MCP_USER_AGENT = `${APP_NAME}/${APP_VERSION}`;
 
 /**
  * Largest single JSON-RPC frame we accept from a server, across every
@@ -321,6 +336,7 @@ export function createSseTransport(
         headers: {
           ...options.headers,
           accept: "text/event-stream",
+          "user-agent": MCP_USER_AGENT,
           "mcp-protocol-version": MCP_PROTOCOL_VERSION,
         },
         signal: streamController.signal,
@@ -391,6 +407,7 @@ export function createSseTransport(
             ...options.headers,
             "content-type": "application/json",
             accept: "application/json, text/event-stream",
+            "user-agent": MCP_USER_AGENT,
             "mcp-protocol-version": MCP_PROTOCOL_VERSION,
           },
           body: JSON.stringify(message),

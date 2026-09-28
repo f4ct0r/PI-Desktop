@@ -376,6 +376,12 @@ test("a remote mcp server negotiates over http and keeps its session", async (t)
   assert.equal(requests[0].headers["mcp-session-id"], undefined);
   assert.equal(requests[0].headers["x-api-key"], "sk-test");
   assert.equal(requests.at(-1).headers["mcp-session-id"], "sess-42");
+  // Electron's main-process fetch is Chromium and announces a `Mozilla/...`
+  // agent by default, which local MCP servers refuse as browser-originated.
+  for (const request of requests) {
+    assert.match(request.headers["user-agent"], /^PI-Desktop\//);
+    assert.doesNotMatch(request.headers["user-agent"], /^Mozilla\//);
+  }
 });
 
 test("a remote MCP tool can run longer than the connection timeout", async (t) => {

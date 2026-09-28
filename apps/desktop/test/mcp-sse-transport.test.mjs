@@ -183,6 +183,30 @@ test("completes a full handshake and tool call over legacy SSE", async (t) => {
   assert.equal(result.content[0].text, "hello sse|sk-test");
 });
 
+test("never presents a browser user-agent to the server", async (t) => {
+  // Electron's main-process fetch is Chromium's network stack and announces a
+  // `Mozilla/... Chrome/...` agent by default. Local MCP servers guard against
+  // DNS rebinding by refusing browser-originated requests, which would lock the
+  // desktop out of exactly the localhost servers it exists to reach.
+  const server = await startSseServer(t, { headersProbe: true });
+  const client = new McpServerClient({
+    rootPath: rootPath(),
+    server: { id: "legacy", transport: "sse", url: server.url },
+    values: {},
+  });
+  t.after(() => client.close());
+  await client.connect();
+  await client.callTool("echo", { text: "ua" });
+
+  const agents = [server.seen[0]["user-agent"], ...server.posted.map((entry) => entry.headers["user-agent"])];
+  assert.ok(agents.length >= 3, "the stream and every posted message must be covered");
+  for (const agent of agents) {
+    assert.ok(agent, "every sse request must carry a user-agent");
+    assert.doesNotMatch(agent, /^Mozilla\//, "an sse request must not look browser-originated");
+  }
+  assert.match(agents[0], /^PI-Desktop\//);
+});
+
 test("opens the event stream with GET and the event-stream accept header", async (t) => {
   const server = await startSseServer(t, { headersProbe: true });
   const client = new McpServerClient({

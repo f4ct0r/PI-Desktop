@@ -11,6 +11,7 @@ import {
   createSseTransport,
   mcpError,
   MCP_PROTOCOL_VERSION,
+  MCP_USER_AGENT,
   parseSseMessages,
   type JsonRpcMessage,
   type McpError,
@@ -333,6 +334,7 @@ function createHttpTransport(
               ...requestHeaders,
               "content-type": "application/json",
               accept: "application/json, text/event-stream",
+              "user-agent": MCP_USER_AGENT,
               "mcp-protocol-version": MCP_PROTOCOL_VERSION,
               ...(currentOrigin === initialOrigin && sessionId
                 ? { "mcp-session-id": sessionId }
