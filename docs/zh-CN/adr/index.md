@@ -306,6 +306,9 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0298 | [应用不再随包发布任何字体](/adr/0298-remove-bundled-fonts) | 已接受（D598；修订 ADR 0083 / D232） |
 | 0308 | [移除拉取请求页面与列表工具](/adr/0308-remove-pull-requests-destination) | 已接受 |
 | 0309 | [移除 macOS 首次启动辅助文件](/adr/0309-remove-macos-first-launch-artifacts) | 已接受（D634；修订 D457 / ADR 0296） |
+| 0310 | [保持本地权限批准一直待解决](/adr/0310-local-permission-approvals-without-deadline) | 已接受实施 |
+| 0311 | [在 Host 受理时重新核验 Live Work 工作空间身份](/adr/0311-live-work-workspace-admission-guard) | 已实现候选 |
+| 0312 | [会话级 Todo 清单](/adr/0312-session-scoped-todo-checklist) | 已接受实施 |
 | registry-header-variable-spelling | [Remote header variables accept the registry's `{name}` spelling](/adr/registry-header-variable-spelling) | Proposed |
 
 ## 什么时候看 ADR

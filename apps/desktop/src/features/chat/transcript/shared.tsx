@@ -47,6 +47,7 @@ import {
   IconFolder,
   IconGlobe,
   IconImage,
+  IconListChecks,
   IconPencil,
   IconSearch,
   IconSheet,
@@ -320,7 +321,6 @@ export function AssistantErrorMessage({ message }: { message: UiMessage }) {
     </section>
   );
 }
-
 export const TOOL_ACTION_KEYS: Record<ToolAction, string> = {
   read: "chat.toolRead",
   list: "chat.toolListed",
@@ -331,6 +331,7 @@ export const TOOL_ACTION_KEYS: Record<ToolAction, string> = {
   fetch: "chat.toolFetched",
   fork: "chat.toolUsed",
   delegate: "chat.toolDelegated",
+  todo: "chat.todo.updated",
   use: "chat.toolUsed",
 };
 
@@ -361,6 +362,7 @@ export const TOOL_RUNNING_KEYS: Record<ToolAction, string> = {
   fetch: "chat.toolFetching",
   fork: "chat.toolUsing",
   delegate: "chat.toolDelegating",
+  todo: "chat.todo.updating",
   use: "chat.toolUsing",
 };
 
@@ -376,6 +378,8 @@ export function ToolActionIcon({ action }: { action: ToolAction }) {
     case "write":
     case "edit":
       return <IconPencil {...props} />;
+    case "todo":
+      return <IconListChecks {...props} />;
     case "run":
       return <IconTerminal {...props} />;
     case "fetch":

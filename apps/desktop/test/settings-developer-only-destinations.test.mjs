@@ -25,9 +25,52 @@ const composer = readFileSync(
   new URL("../src/components/Composer.tsx", import.meta.url),
   "utf8",
 );
+const composerToolbar = readFileSync(
+  new URL("../src/features/chat/composer/ComposerToolbar.tsx", import.meta.url),
+  "utf8",
+);
+
+const liveVoiceSettings = readFileSync(
+  new URL(
+    "../src/features/settings/voice/LiveVoiceSettings.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const settingsPrimitives = readFileSync(
+  new URL("../src/features/settings/primitives.tsx", import.meta.url),
+  "utf8",
+);
 
 const identity = (key) => key;
-const experimentalIds = ["voice", "sync", "remoteHosts"];
+const experimentalIds = ["sync", "remoteHosts"];
+
+test("Live Voice is reachable in every build without developer mode", () => {
+  for (const developerMode of [false, true]) {
+    for (const includeDevelopmentOnly of [false, true]) {
+      assert.ok(visibleSettingsNav(developerMode, includeDevelopmentOnly)
+        .some((entry) => entry.id === "voice"));
+      assert.equal(isSettingsDestinationHidden("voice", developerMode, includeDevelopmentOnly), false);
+      for (const query of [
+        "liveVoice.title",
+        "liveVoice.enable",
+        "liveVoice.provider",
+        "liveVoice.adapters.codex-live.title",
+        "liveVoice.adapters.gemini-live.title",
+        "liveVoice.adapters.openai-realtime.title",
+      ]) {
+        assert.ok(searchSettings(query, identity, { developerMode, includeDevelopmentOnly })
+          .some((hit) => hit.tab === "voice"));
+      }
+    }
+  }
+  // Voice is a regular Preferences destination now: no Experimental badge on
+  // the rail row or the page title.
+  assert.equal(
+    SETTINGS_NAV.find((entry) => entry.id === "voice")?.experimentalBadgeKey,
+    undefined,
+  );
+});
 
 test("developer mode retains the experimental destinations in development", () => {
   const off = visibleSettingsNav(false).map((entry) => entry.id);
@@ -48,7 +91,7 @@ test("developer mode retains the experimental destinations in development", () =
   );
 });
 
-test("packaged builds hide voice, cloud sync, and remote hosts", () => {
+test("packaged builds still hide cloud sync and remote hosts", () => {
   const packaged = visibleSettingsNav(true, false).map((entry) => entry.id);
   for (const id of experimentalIds) {
     assert.equal(packaged.includes(id), false);
@@ -67,7 +110,7 @@ test("settings search mirrors developer and packaged visibility", () => {
       .some((hit) => hit.tab === "sync"),
   );
 
-  for (const query of ["voiceEnable", "configSync.connectionTitle", "remotehosts"]) {
+  for (const query of ["configSync.connectionTitle", "remotehosts"]) {
     assert.ok(
       searchSettings(query, identity, { developerMode: true })
         .some((hit) => experimentalIds.includes(hit.tab)),
@@ -91,6 +134,20 @@ test("settings routes, global search, and composer use build visibility", () => 
   assert.match(settingsPage, /tab === "sync" && !tabHidden && <ConfigSyncPage \/>/);
   assert.match(settingsPage, /tab === "remoteHosts" && !tabHidden && <RemoteHostsPage \/>/);
   assert.match(searchDialog, /includeDevelopmentOnly: import\.meta\.env\.DEV/);
-  assert.match(composer, /const voiceEnabled = import\.meta\.env\.DEV && !!settings\?\.voice\?\.enabled/);
-  assert.match(composer, /\{import\.meta\.env\.DEV && \([\s\S]*<VoiceOverlay/);
+  assert.match(composer, /useVoiceInput/);
+  assert.doesNotMatch(composer, /VoiceOverlay|voiceEnabled/);
+  assert.match(composerToolbar, /<LiveVoiceControls\b/);
+  assert.doesNotMatch(composerToolbar, /VoiceMicButton|voicePhase|onVoiceToggle|onVoiceCancel/);
+});
+
+test("Live Voice keeps its Model configuration link on the card heading", () => {
+  // The link belongs to the enable card's heading line, not to a floating
+  // control inside the row stack.
+  assert.match(settingsPrimitives, /settings-card-heading-with-action/);
+  assert.match(settingsPrimitives, /action\?: ReactNode/);
+  assert.match(
+    liveVoiceSettings,
+    /action=\{[\s\S]*className="settings-text-action"[\s\S]*settings\.configuration/,
+  );
+  assert.doesNotMatch(liveVoiceSettings, /live-voice-actions/);
 });

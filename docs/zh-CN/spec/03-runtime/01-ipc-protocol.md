@@ -38,6 +38,7 @@
 | `menu` | 列入许可名单的应用程序菜单命令和本机 editing/window 操作 |
 | `notification` | 持久收件箱 list/read/clear 和 new/activated 事件 |
 | `stats` | 已完成回合的 token 历史（host RPC；仪表板由插件拥有） |
+| `voice/live` | 应用管理的实时语音通话、无凭证状态/设置 DTO 与每通电话专用媒体端口 |
 
 ## 3. 通道约定
 
@@ -1863,3 +1864,26 @@ unchanged. See [provider configuration](12-provider-config-schema.md).
 输入密码只会被传给需要它的操作。原始秘密、vault key、解密资源或远端 archive 不会返回到 Renderer。`configSync.changed` 事件携带相同的脱敏状态，并由 Host 发起的变更（包括 Host scheduler）触发。Main 只是传输/生命周期协调器，不负责调度、合并、加密或应用配置。
 
 手动同步会在运行期间报告 `configSync.progress`：当前阶段（`capture`、`download`、`merge`、`upload`、`apply` 或 `cleanup`）、该阶段已完成与总量，以及已知时的字节数。因此上传大量资源对象时，界面不会无内容可显示。后台轮询不报告进度，因为只有手动路径有调用方在等待。
+
+## 16. 实时语音 API
+
+实时语音是仅供主窗口使用、由应用管理的通话通路，详见[live-voice.md](live-voice.md)。DTO 定义在 `packages/shared/src/types/live-voice.ts`；preload 只暴露下表列出的白名单通道。Main 从调用 IPC 的受信 frame 推导 owner，并只向该 frame 发送通话事件。payload 不能提供 owner 身份或凭证。
+
+| IPC 通道 | 方向 | 契约 |
+|---|---|---|
+| `pi-desktop/voice/live/status` | Renderer → Main | 脱敏功能状态、绑定就绪情况和设置版本 |
+| `pi-desktop/voice/live/prepare` | Renderer → Main | 按 request ID 幂等准备通话；同步保留共享麦克风租约 |
+| `pi-desktop/voice/live/connect` | Renderer → Main | 连接已准备的通话；Codex 可附带有界 SDP offer |
+| `pi-desktop/voice/live/setMuted` | Renderer → Main | 通过单调递增的 capture epoch 设置静音 |
+| `pi-desktop/voice/live/reportMedia` | Renderer → Main | 报告采集、连接和释放生命周期；只有确认释放后才能复用租约 |
+| `pi-desktop/voice/live/reportPlayback` | Renderer → Main | 有界的 PCM 已播放游标列表，供中断/截断使用 |
+| `pi-desktop/voice/live/reportDelegation` | Renderer → Main | 报告 Provider 请求的 delegation；v1 会拒绝执行，也不会转发给 Agent/MCP |
+| `pi-desktop/voice/live/reportControlApplied` | Renderer → Main | 确认受支持的 Provider 控制，或报告拒绝了不支持的操作 |
+| `pi-desktop/voice/live/end` | Renderer → Main | 幂等结束活动通话，或取消等待中的请求 |
+| `pi-desktop/voice/live/heartbeat` | Renderer → Main | Renderer 正常响应时维持 owner 通话 |
+| `pi-desktop/voice/live/event/changed` | Main → Renderer | 脱敏通话阶段、错误、提示和活动状态 |
+| `pi-desktop/voice/live/event/port` | Main → Renderer | 转交一个通话专用 `MessagePort`，附带 call ID 和一次性 nonce |
+| `pi-desktop/voice/live/event/control` | Main → Renderer | Provider 控制请求，仅包含 v1 明确允许的控制类型 |
+| `pi-desktop/voice/live/event/transcript` | Main → Renderer | 当前通话的临时、有界字幕事件 |
+
+只有 owner 验证成功后才会创建 `MessagePort`，之后由 preload 中继到 renderer 窗口。owner 在首个 `hello` 中回送每通电话独有的 nonce；Main 仅在 call ID 和 nonce 均匹配时接受该端口一次。二进制帧包含有界 PCM 音频、采集 epoch、释放确认、播放游标和协议就绪信号。它不是通用 IPC 隧道：不会传输 Provider 凭证、任意命令、工作区路径、Agent 消息或持久化字幕。通话结束或 owner 丢失时会关闭端口。

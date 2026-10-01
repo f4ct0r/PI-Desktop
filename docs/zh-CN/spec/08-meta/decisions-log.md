@@ -17,7 +17,7 @@
 | D002 | SQLite 所有权 | **Rust host-core 独家拥有 SQLite** | 单写入者，权限边界更清晰 |
 | D003 | 默认模式 | **Agent** | 产品是座席桌面，不是纯聊天 |
 | D004 | 前受限个人资料 | *（由 D189 取代）* **以前的聊天只读配置文件已删除；持久的聊天值迁移到 Plan。** | 该产品现在有一个 Agent，具有规划状态和单独的批准边界 |
-| D005 | 权限超时 | **120秒→拒绝** | 失败关闭，不会永远挂起 |
+| D005 | 权限超时 | *（由 D636 / ADR 0310 修订）* **本地权限确认没有自动截止时间；必须明确决定或取消** | 避免用户未注意到卡片时被意外拒绝 |
 | D006 | `allow-session` 范围 | **由 `toolName` 提供** | 简单的用户体验；工作区沙箱仍然强制路径安全 |
 | D007 | `~/.pi` 兼容性 | **MVP 中没有自动导入** | 在 `~/.pi-desktop` 中保持配置所有权干净 |
 | D008 | Node 运行时打包 | **开发人员使用系统 Node；版本通过 `ELECTRON_RUN_AS_NODE=1` 在 Electron 二进制文件上运行捆绑的 sidecar（未提供单独的 Node）** | 疏通M1–M4；在 M5 处解决，请参阅 03-runtime/07-process-model §6 |
@@ -32,6 +32,8 @@
 | D459 | 恢复可拖拽侧边栏宽度，过窄时收起 | **修订 D408 / ADR 0238 并恢复 ADR 0141（ADR 0290）：展开侧边栏重新成为渲染层拥有的 `240px..520px` 列（默认 `275px`），右缘手柄在指针按下时预览、释放时持久，并支持左右方向键（16px）、Home 与 End。指针宽度低于 `160px` 时以用户操作收起，不覆盖首选展开宽度；键盘调整永不收起。实时上限为扣除 MainChat 450px 下限后的三栏余量。仅渲染进程；沿用 `pi.desktop.sidebarWidth` 偏好。见 E2E-168。** | 长标签需要可回收宽度；ADR 0238 固定 275px 会挡住这一点，而三栏实时预算本就可以限制用户选定的宽度。该决策曾被误记为 D451（已由「审阅面板只在用户主动操作时打开」占用）；按 issue #620 改号。 |
 | D457 | 已签名 macOS DMG 改为双图标安装 | *（由 D634 修订）* **修订 D406 / ADR 0232 / ADR 0204：正式与本地 DMG 只包含 PI-Desktop.app 和 Applications 链接，使用 720×440 品牌背景。ZIP 只包含 PI-Desktop.app。任何 macOS 格式（包括未签名调试工件）都不再附带打开说明或 command 助手。见 ADR 0296 / ADR 0309 与 E2E-196b。** | 标签 DMG 已签名公证（D450）；打包工件不再需要未签名首次启动指引。 |
 | D634 | 移除 macOS 首次启动辅助文件 | **修订 D457 / ADR 0296 及 ADR 0232 / ADR 0204 中的 macOS 分发约定：macOS DMG 与 ZIP 均不再附带 `PI-Desktop-macOS-open.command`、`PI-Desktop-macOS-opening-help.txt`，或其他捆绑的 quarantine 清理助手/打开说明。ZIP 根目录只包含 `PI-Desktop.app`；DMG 仍为双图标安装。该规定适用于签名发布和本地或可选的未签名调试构建。见 ADR 0309 与 E2E-196b。** | 已签名发布通道不再需要未签名首次启动兜底；随调试包附带此类文件可能误导用户绕过 Gatekeeper。 |
+| D635 | 按工作区上限裁剪的 800×560 窗口最小尺寸 | **取代 D156 / D447 中的 1040×700 窗口最小尺寸（及 ADR 0029 / ADR 0238 的对应条款）和 `window/setWorkPanelChatWidth` 的 `1040..10000` 范围（ADR 0146）：Electron 强制 800×560 最小尺寸，并由 `clampMinimumSizeToWorkArea` 按维度裁剪到当前显示器工作区。聊天宽度 IPC 与渲染层接受 `800..10000`。窄窗口下沿用现有 `workPanelLayout` 预算：限制停靠面板宽度以保证 MainChat 的 450px 下限，并优先收起侧边栏。见 US-UI-19 与 E2E-167。** | Windows 150% 缩放下工作区约为 1280×672 DIP，固定最小尺寸可能超过屏幕，导致窗口无法适配。 |
+| D636 | 本地权限确认没有自动截止时间 | **修订 D005 / ADR 0011：需要权限的 `tools.execute` 请求会在 host-core、渲染层和传输中保持待处理，直到用户选择允许一次、允许会话或拒绝，或请求被取消/进程关闭。移除 120 秒倒计时以及本地权限契约中的超时字段。工具自身执行预算以及独立的 RACP/Plan 审批时限保持不变。见 ADR 0310、issue #1214 与 E2E-017。** | 用户可能在其他工作期间错过可见的权限请求；保持取消和执行预算即可保留控制与资源安全，又不会把“未注意”变成一个决定。 |
 | D450 | 签名的 macOS GitHub Release | **修订 D078 / ADR 0022：GitHub tag 发布使用身份 `Developer ID Application: XingYu Liu (DUV63RKYTW)` / 团队 `DUV63RKYTW`，通过 Actions 密钥（`CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`）对 macOS DMG/ZIP 做 Developer ID 签名、`notarytool` 公证、装订和 Gatekeeper 校验；缺少密钥则失败。无证书的本地未签名打包仍可用。`workflow_dispatch` 仅可把 `sign_macos: false` 用于未签名调试产物。打包的 macOS 走应用内 `electron-updater`（ZIP + 合并后的 `latest-mac.yml`）；Linux deb/rpm 与 Windows 便携版 ZIP 仍为通知并打开发布页。禁止 afterPack/afterSign adhoc 签名（ADR 0278）。** | 正式 DMG 应无需 Gatekeeper 警告即可打开，已签名 macOS 安装可下载并重启到新 tag。见 ADR 0289、E2E-196c、E2E-067A。 |
 
 ## B. 辅助实现默认值
@@ -236,7 +238,7 @@
 | D098 | Review 选项卡读取 git 工作树 *（由 D180 取代）* | **历史性决定：通过 git CLI 审核呈现工作区的未提交状态。** | 被取代，因为提交删除了消息级证据并且无法支持安全的每消息回滚 |
 | D099 | 终端选项卡是真正的 PTY（已由 D251 取代） | **历史决策：旧版工作面板曾提供按会话范围保留的交互式 shell 选项卡。** | 当前产品移除了独立 shell 表面；Agent Bash 仍是非交互式并归对话所有 |
 | D100 | 浏览器选项卡嵌入 WebContentsView | **预览浏览器是一个主进程 WebContentsView，具有渲染器驱动的边界同步、强化（拒绝弹出窗口→外部、拒绝权限请求、仅限 http(s) 导航、隔离持久分区）；当阻止覆盖（调色板、权限对话框、设置）打开时它会隐藏。用户驾驶它；代理没有。** | 推荐现代嵌入，无需 webview-tag 警告；隐藏规则通过渲染器覆盖解析其合成器 z 顺序 |
-| D138 | 会话范围的内联权限请求 | **工具批准是其原始 `sessionId` 拥有的内联 PermissionCard，而不是全局对话框。不同的会话保留独立的待处理请求和绝对的超时期限；后台 message/tool/permission 事件仅更新范围内的状态，并且从不激活、覆盖或聚焦其他对话。解析和清理与会话和请求身份相匹配。这仅取代 D100 的权限对话框 overlay/hide 子句；调色板、搜索、设置和其他阻塞表面保留其现有的浏览器隐藏行为。** | 并发代理不得窃取活动工作流程或覆盖彼此的批准请求；现有协议已携带所需的 session/request 身份。 |
+| D138 | 会话范围的内联权限请求 | **工具批准是其原始 `sessionId` 拥有的内联 PermissionCard，而不是全局对话框。不同的会话保留独立的待处理请求且没有自动截止时间；后台 message/tool/permission 事件仅更新范围内的状态，并且从不激活、覆盖或聚焦其他对话。解析和清理与会话和请求身份相匹配。这仅取代 D100 的权限对话框 overlay/hide 子句；调色板、搜索、设置和其他阻塞表面保留其现有的浏览器隐藏行为。** | 并发代理不得窃取活动工作流程或覆盖彼此的批准请求；现有协议已携带所需的 session/request 身份。 |
 | D139 | 导航意图和快捷方式事件防护 | **每个显式会话、项目、页面、分支或历史导航都开始或重用一个渲染器导航意图；异步工作仅在该意图保持当前状态时提交可见状态。全局快捷键忽略仅修饰符和 IME 组合事件，而历史导航也忽略按键重复事件。** | 延迟的 session/project 加载和不完整的键盘事件不得导致无法解释的页面或历史跳转。 |
 | D128 | 工件驱动的工作面板选项卡（由 D207 取代的快捷方式子句） | **工作面板没有空的手动入口点、欢迎选择器、titlebar/menu 命令或 Cmd/Ctrl+J 快捷方式。 file/URL/BrowserPreview/successful-command 工件创建并激活可关闭的顶部选项卡；成功的活动会话工作区 Write/Edit 工件创建并激活单例“审阅”选项卡。文件选项卡由词法规范化路径键入，单例工具选项卡重复数据删除，关闭活动选项卡选择其右侧邻居然后选择左侧，关闭最后一个选项卡隐藏面板，唯一的面板级控件将其折叠，而不删除保留的运行时选项卡。更改可见会话或工作区会关闭并清除选项卡，因此相关资源永远不会跨越上下文边界。启动关闭，没有任何选项卡；只有面板宽度仍然存在，而临时操作系统窗口扩展被排除在启动范围之外。后台会话、失败和临时写入不会抢走焦点。这取代了 D097 的固定选项卡入口点和 `{open, tab}` 持久性，改进了 D098 的自动刷新，并且仅取代了 D112 的welcome-chooser 子句。** | 匹配 Codex 的输出驱动工作界面，避免空工具启动器，并使每个可见选项卡对应于会话实际生成或显式预览的工作。 D128 纠正最初重复的 D119 标识符； D119 仍然是记录文件存储决策。 |
 | D140 | 会话拥有的脏工作区成绩单审核条目*（由 D179 取代）* | **会话成功生成工作区 Write/Edit 后，其记录以折叠活动组之外的一个明确的“审阅更改”命令结束，而 Git 工作树仍然是脏的；同一项目中的其他会话不会继承该命令。它报告上限文件计数和 addition/deletion 总数，并创建、重新打开或激活 D128 的单个“审阅”选项卡。条目和审阅共享一个工作区键控差异，在工作区激活、成功 Write/Edit/Bash 完成（500 毫秒去抖）、显式审阅刷新和窗口焦点时刷新；排序的请求会丢弃先前的工作空间响应。干净和非 Git 结果明确了该工作区的审查所有权； clean、non-Git、missing-workspace 和 failed-refresh 状态会隐藏该条目。审查所有权是在使用 D142 工作面板上下文重新启动时丢弃的渲染器内存状态。这是上下文 artifact/status 条目，而不是 D128 禁止的空手动启动器。** | 自动面板打开在折叠或选项卡关闭后不会留下可发现的返回路径，而会话所有权可防止不相关的对话声明项目范围的编辑。共享真实的差异可以使对话条目准确并保持评论的重复数据。 |
@@ -1181,7 +1183,7 @@ D193 和 D194。
 | D189 | Plan 检查点工件、批准和执行纪元 | **相同的 pi Agent 使用 `Agent | Plan`, with Agent default. Plan calls `SubmitPlan(标题, markdown, 问题)` as the only tool in its assistant batch. Rust host-core writes the submitted Markdown bytes unchanged to a new immutable unique file under `<workspaceRoot>/.pi/plan/*.md`; it stores the relative artifact path, SHA-256, and byte size together with structured title/question fields in the existing `plan_approvals` row. No title/question wrapper is added and no prior artifact is replaced. The approval surface displays title, question, an artifact opener, absolute expiry, and status, and offers only Approve or Reject. Approve requires an explicit `ask`, `accept-edits`, or `auto` permission mode, with Ask selected by default; Reject carries no mode. The approval expires at one absolute 30-minute deadline and uses `PLAN_APPROVAL_TIMEOUT`. The same `plan_approvals` row carries `execution_id` and `execution_state` through `queued → 运行 → 已完成 | 中断了`. A startup transaction marks prior pending approvals and queued/running execution states interrupted before serving RPC; no work is replayed. Pending interruption/rejection/expiry leaves the session Plan; an already-approved queued/running interruption leaves the session Agent. One active turn, idle-only configuration, and one pending approval/queued-or-running execution per session are enforced. Scheduled Plan is rejected before provider, artifact, or queue work with `PLAN_REQUIRES_INTERACTIVE_SESSION`。协议 v9 和存储模式 v10 携带的合约没有序列化的 process-epoch 字段。** | 不可变的主机工件保留提交的检查点，同时一个 approval/execution 行和启动进程栅栏可防止重新启动重播，而不会丢失已批准的 Agent 状态 |
 | D190 | 可选择的命令 shell 目录和执行标识 | **主机核心公开稳定的平台感知目录 ID：`windows-powershell`、`cmd`、`git-bash` 和 `bash`；平台目录仅包含该平台支持的 ID。 `defaultCommandShell` 保留在主机设置中，并且设置写入拒绝不可用或错误的平台 ID。如果持久选择稍后变得不可用，则有效 shell 会有意回退到第一个可用的平台 shell。 `Bash` 工具和 `tools.execute` 协议名称保持不变；每个回合都会固定有效的 shell ID 和方言，并且主机在使用 `COMMAND_SHELL_CHANGED` 生成之前拒绝过时的 ID/dialect。 Shell 标识是目录选择，而不是可执行路径哈希。 Bash 分别流式传输 stdout 和 stderr，使用强制的 60 秒默认超时和 1-300 秒覆盖，并且 cancellation/timeout 关闭完整的进程树。** | 用户可以选择命令语言，而无需增加协议工具，而平台验证、显式回退和转固定目录身份可保持执行的可预测性 |
 | D604 | 信任用户自己填写的网络端点 | **对用户填写的 URL 修订 ADR 0243 / 0245 / 0247；沿用 ADR 0142 / 0257 / 0300。用户自己在设置里填写的 URL——市场源、git 远端、MCP OAuth 端点、生成图片 URL——改按"用户端点"策略判定：回环、RFC1918、CGNAT、link-local、ULA、site-local 与 `.local` 都可达，明文 `http` 也可用。这一切由**一个**开关决定：`networkPolicy.mode`（`relaxed` / `strict`），**默认 `relaxed`**，并取代此前按界面分散的确认（明文开关、WebDAV 的 `allowInsecureHttp`、`networkProxy.allowFakeIp`），旧的 `allowInsecureUserEndpoints: false` 迁移为 `strict`；首次明文访问会弹一次告知（`insecureNoticeAcknowledged`）。第三方内容在任何模式下仍只允许公网并把校验过的地址固定到连接：registry 记录、目录正文、目录内部的文档 URL、以及每一次重定向目标。云元数据、`unspecified`、multicast、reserved、documentation 在任何输入上一律拒绝。默认代理绕过列表增加 `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16`。不改主机协议、不改存储 schema：`networkPolicy` 只是既有 app settings 里的一个字段，写入时校验。** | 拒绝用户自己填写的局域网地址并没有消除那次请求——它只是把同样的工作搬到应用旁边的 shell 或浏览器里，因此这条边界牺牲了功能，却没有阻止用户已经做出的决定。SSRF 风险在第三方内容那一侧，所以边界的那一半保持不变。见 ADR 0304。 |
-| D635 | 旧版 HTTP+SSE MCP 传输 | **凡校验 `transport` 之处新增 `sse`，与 `stdio`、`http` 并列，覆盖 Plugin SDK 贡献项、用户 MCP 服务器记录与市场目录条目；`sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同（ADR 0142）。客户端打开长连接的 `GET` 事件流，把每条消息发往服务端公布的 `endpoint` 事件地址，并从这条已打开的流上读取应答；缺少 endpoint 会在连接预算内让握手失败，流断开则结束会话。公布的 endpoint 必须与所配置 URL 同源，必须通过同一套 `assertUrlAllowed` 策略，且不得跟随重定向，因此服务端无法把会话及其声明的凭据迁移到用户未配置的主机。传输契约与唯一的增量事件流解析器移至 `apps/desktop/electron/main/mcp-transport.ts`。导入时声明 `"type": "sse"` 的条目导入为 `sse`，不再并入 `http`。** | 相当一部分已部署的 MCP 服务器只提供旧版 HTTP+SSE 传输，而 streamable HTTP 客户端无法触达它们——它为每条消息发起 `POST` 并从响应中读取应答，而这类服务器只回 `202`，并把应答投递到一条必须事先打开的流上，于是调用会一直挂到预算耗尽。导入此前还会把 `sse` 并入 `http`，把一份可用配置变成一个在导入阶段不报错的、无法连接的服务器。公布的 endpoint 是远端服务器唯一可能把本会话及其 `headers` 重定向到用户从未配置的主机上的位置，因此对其加以约束而非信任。 |
+| D637 | 旧版 HTTP+SSE MCP 传输 | **凡校验 `transport` 之处新增 `sse`，与 `stdio`、`http` 并列，覆盖 Plugin SDK 贡献项、用户 MCP 服务器记录与市场目录条目；`sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同（ADR 0142）。客户端打开长连接的 `GET` 事件流，把每条消息发往服务端公布的 `endpoint` 事件地址，并从这条已打开的流上读取应答；缺少 endpoint 会在连接预算内让握手失败，流断开则结束会话。公布的 endpoint 必须与所配置 URL 同源，必须通过同一套 `assertUrlAllowed` 策略，且不得跟随重定向，因此服务端无法把会话及其声明的凭据迁移到用户未配置的主机。传输契约与唯一的增量事件流解析器移至 `apps/desktop/electron/main/mcp-transport.ts`。导入时声明 `"type": "sse"` 的条目导入为 `sse`，不再并入 `http`。** | 相当一部分已部署的 MCP 服务器只提供旧版 HTTP+SSE 传输，而 streamable HTTP 客户端无法触达它们——它为每条消息发起 `POST` 并从响应中读取应答，而这类服务器只回 `202`，并把应答投递到一条必须事先打开的流上，于是调用会一直挂到预算耗尽。导入此前还会把 `sse` 并入 `http`，把一份可用配置变成一个在导入阶段不报错的、无法连接的服务器。公布的 endpoint 是远端服务器唯一可能把本会话及其 `headers` 重定向到用户从未配置的主机上的位置，因此对其加以约束而非信任。 |
 
 ## 2026-08-05 — 仅代理模式
 
@@ -5153,5 +5155,28 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   stdio 与 streamable HTTP 传输，以及握手逻辑。
 - 导入时声明 `"type": "sse"` 的条目现在导入为 `sse`，不再被并入 `http`；
   后者会生成一个无法连接、且导入阶段不报错的服务器。
-- 决策 D635；ADR [0310](/adr/0310-legacy-http-sse-mcp-transport)
+- 决策 D637；ADR [0315](/adr/0315-legacy-http-sse-mcp-transport)
   修订 D176 / ADR 0038。
+## 2026-09-29 —— 按工作区上限裁剪的 800×560 窗口最小尺寸（D635）
+
+- 应用级窗口最小尺寸为 800×560 DIP。Main 在所有设置最小尺寸的位置（窗口创建、
+  显示器协调、Stage Manager 恢复和工作面板调整路径）都用
+  `clampMinimumSizeToWorkArea` 按维度裁剪到当前显示器工作区（向下取整，至少为 1）。
+  Windows 150% 缩放下工作区约为 1280×672 DIP，固定最小尺寸可能大于屏幕。
+- `window/setWorkPanelChatWidth` 与渲染层聊天宽度裁剪接受 `800..10000px`；两处下限
+  共用同一常量，渲染层认为合法的宽度不会被 Main 拒绝。
+- 窄窗口下仍沿用现有三栏预算（`workPanelLayout`）：限制停靠面板宽度以保证 MainChat
+  的 450px 下限，并优先自动收起展开的侧边栏。已保存的面板宽度不会被改写。
+- D635 取代 D156 / D447 中的 1040×700 最小尺寸（及 ADR 0029 / ADR 0238 的对应条款）
+  和 ADR 0146 中 `1040..10000` 的聊天宽度范围。`work-panel-window.test.mjs` 与
+  `work-panel-resize.test.mjs` 覆盖裁剪与聊天宽度范围；见 US-UI-19 与 E2E-167。
+
+## 2026-09-29 —— 本地权限确认一直保持待处理直到解决（D636）
+
+- D636 针对本地桌面权限门控修订 D005 / ADR 0011。需要权限的
+  `tools.execute` 请求没有自动截止时间：host-core 保留其
+  `permissions.pending` 状态，渲染层保留内联卡片，传输不安装计时器。
+  允许一次、允许会话、拒绝、明确取消和进程关闭仍是解决路径。
+- 权限请求不再携带 `timeoutMs`；pending 快照不再暴露 `expiresAt` 或
+  `remainingMs`，UI 也不再显示倒计时。工具自身的命令/插件执行预算以及独立的
+  Plan/Goal 和 RACP 审批时限保持不变。见 ADR 0310、issue #1214 与 E2E-017。

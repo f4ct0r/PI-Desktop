@@ -117,7 +117,8 @@ test("Composer owns the mode and model controls", () => {
   // default thinking level instead of pinning the draft to its current value.
   assert.match(scheduledModelPickerSource, /activeSessionId: null/);
   assert.doesNotMatch(scheduledModelPickerSource, /useId\(/);
-  assert.match(
+  assert.match(scheduledModelPickerSource, /composerModelDisplayName\(provider, value\.modelId \?\? ""\)/);
+  assert.doesNotMatch(
     scheduledModelPickerSource,
     /composerModelDisplayName\(provider, value\.modelId \?\? "", selected\.displayName\)/,
   );
@@ -199,11 +200,13 @@ test("draft Composer thinking follows the exact model selected in its menu", () 
   assert.match(composerSource, /const selectedBinding = provider\?\.models\.find/);
   assert.match(
     composerSource,
-    /const draftThinkingLevel = selectedModelInfo\s*\?\s*initialThinkingLevelForBinding\(/,
+    /const draftThinkingLevel = selectedModelInfo\?\.catalogSource === "models\.dev"\s*\?\s*initialThinkingLevelForBinding\(/,
   );
   assert.match(composerSource, /initialThinkingLevelForUnmatchedModel\(/);
   assert.match(modelMenuSource, /initialThinkingLevelForUnmatchedModel\(/);
   assert.match(sessionCoordinationSource, /initialThinkingLevelForUnmatchedModel\(/);
+  assert.match(modelMenuSource, /nextModel\?\.catalogSource === "models\.dev"/);
+  assert.match(sessionCoordinationSource, /catalogModel\?\.catalogSource === "models\.dev"/);
   assert.doesNotMatch(composerSource, /highestSupportedThinkingLevel/);
 });
 
@@ -249,7 +252,7 @@ test("transcript keeps assistant thinking in a separate disclosure", () => {
   assert.match(transcriptSource, /thinking-prose[\s\S]*?Markdown source=\{text\}/);
   assert.match(transcriptSource, /CopyButton text=\{content\}/);
   assert.match(transcriptSource, /messageThinking as thinkingText/);
-  assert.match(transcriptSource, /onlyThinking = items\.every/);
+  assert.match(transcriptSource, /onlyThinking = useMemo\(\(\) => items\.every/);
   assert.match(stylesSource, /\.thinking-prose/);
 });
 
@@ -281,11 +284,11 @@ test("detailed mode opens the last tool while compact keeps payloads collapsed",
   assert.match(transcriptSource, /useAutomaticDisclosure\(\s*hasSubagentTopology \? live : visibleItems\.length <= 1/);
   assert.match(
     transcriptSource,
-    /<ThinkingRow[\s\S]*?autoOpen=\{live && itemIndex === items.length - 1\}/,
+    /<ThinkingRow[\s\S]*?autoOpen=\{live && item === lastItem\}/,
   );
   assert.match(
     transcriptSource,
-    /const autoOpenLatest =\s*!compact && isLast && itemIndex === items.length - 1/,
+    /const autoOpenLatest =\s*!compact && isLast && item === lastItem/,
   );
   assert.match(transcriptSource, /<ToolRow[\s\S]*?autoOpen=\{autoOpenLatest\}/);
   assert.match(transcriptToolRowSource, /const disclosure = useAutomaticDisclosure\(\s*autoOpen && !failed && status !== "denied",\s*revealRequest/);

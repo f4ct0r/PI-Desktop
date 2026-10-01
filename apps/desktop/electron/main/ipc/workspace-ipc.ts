@@ -35,7 +35,7 @@ import {
   resolveRealOpenablePath,
 } from "@pi-desktop/host-runtime";
 import { openableMp4Path } from "../open-attachment-video";
-import { resolveChatFileRef } from "../chat-ref-resolve";
+import { isChatRefOutsideRoots, resolveChatFileRef } from "../chat-ref-resolve";
 import { getWorkspaceFileIndex } from "../fs-index";
 import {
   projectFolderPaths,
@@ -48,6 +48,7 @@ import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { ClipboardHistory } from "../clipboard-history";
+import { getModuleDirectory } from "../module-path";
 import type { PluginRuntime } from "../plugin-runtime";
 import type { IpcRegistrar } from "./types";
 
@@ -204,7 +205,9 @@ export function registerWorkspaceIpc({
     const seed =
       process.env.PI_DESKTOP_SEED_WORKSPACE ||
       process.env.PI_DESKTOP_WORKSPACE ||
-      (isDevelopmentBuild ? join(__dirname, "../../..") : "");
+      (isDevelopmentBuild
+        ? join(getModuleDirectory(import.meta.url), "../../..")
+        : "");
     if (!res.workspace && seed) {
       try {
         res = (await host.call("workspace.set", { path: seed })) as {
@@ -916,13 +919,15 @@ export function registerWorkspaceIpc({
       const ref = String(input.ref ?? "").trim();
       if (!ref) return { match: null };
       const workspaceRoot = await optionalWorkspaceRoot();
-      return {
-        match: await resolveChatFileRef(ref, {
-          project: projectRootsFor(workspaceRoot),
-          scratch: await sessionScratchRoot(input.sessionId),
-          attachments: join(dataDir, "attachments"),
-        }),
+      const roots = {
+        project: projectRootsFor(workspaceRoot),
+        scratch: await sessionScratchRoot(input.sessionId),
+        attachments: join(dataDir, "attachments"),
       };
+      if (await isChatRefOutsideRoots(ref, roots)) {
+        return { match: null, reason: "outside-allowed-roots" };
+      }
+      return { match: await resolveChatFileRef(ref, roots) };
     },
   );
 

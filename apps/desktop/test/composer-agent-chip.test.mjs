@@ -48,6 +48,13 @@ const draftHookSource = await readFile(
   new URL("../src/features/chat/composer/hooks/useComposerDraft.ts", import.meta.url),
   "utf8",
 );
+// The accept path lives in the completions hook since it also serves the
+// plugin rows, so an agent mention is spliced from there rather than the
+// component itself.
+const completionsHookSource = await readFile(
+  new URL("../src/features/chat/composer/hooks/useComposerCompletions.ts", import.meta.url),
+  "utf8",
+);
 
 const TOKEN = "";
 
@@ -165,6 +172,6 @@ test("a draft restore brings back a delegate, not a file chip", () => {
 test("accepting an agent splices a sentinel, like accepting a file", () => {
   // A token-less chip never paints now that chips are inline, so inserting
   // plain `@name` text would leave the mention looking like an unselected row.
-  assert.match(composerSource, /createAgentReference\(/);
-  assert.match(composerSource, /const token = nextChipToken\(\);/);
+  assert.match(completionsHookSource, /createAgentReference\(/);
+  assert.match(completionsHookSource, /const token = nextChipToken\(\);/);
 });

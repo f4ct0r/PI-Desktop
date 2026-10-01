@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme, screen, type Tray } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { getModuleDirectory } from "../module-path";
 import {
   APP_NAME,
   builtinWindowBackground,
@@ -17,6 +18,7 @@ import {
   baseWindowBounds,
   clampBoundsOriginToWorkArea,
   clampBoundsToWorkArea,
+  clampMinimumSizeToWorkArea,
   displayWorkAreaKey,
   emptyWorkPanelReservationState,
   isWorkPanelOuterResizeEdge,
@@ -154,8 +156,11 @@ export async function createWindow({
   const restoredBounds = savedState
     ? clampBoundsToWorkArea(savedState, restoreWorkArea)
     : null;
-  const initialMinWidth = Math.min(windowMinWidth, restoreWorkArea.width);
-  const initialMinHeight = Math.min(windowMinHeight, restoreWorkArea.height);
+  const { width: initialMinWidth, height: initialMinHeight } =
+    clampMinimumSizeToWorkArea(
+      { width: windowMinWidth, height: windowMinHeight },
+      restoreWorkArea,
+    );
   windowState.mainWindow = new BrowserWindow({
     ...(restoredBounds ?? { width: 1200, height: 800 }),
     minWidth: initialMinWidth,
@@ -192,7 +197,7 @@ export async function createWindow({
         }
       : {}),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
+      preload: join(getModuleDirectory(import.meta.url), "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -298,11 +303,14 @@ export async function createWindow({
       width: Math.max(0, currentBounds.width - nextBaseBounds.width),
       xOffset: currentBounds.x - nextBaseBounds.x,
     };
-    const minimumWidth = Math.max(
-      windowMinWidth,
-      Math.min(display.workArea.width, windowMinWidth + panelWidth),
+    const minimumWidth = Math.min(
+      display.workArea.width,
+      windowMinWidth + panelWidth,
     );
-    window.setMinimumSize(minimumWidth, windowMinHeight);
+    window.setMinimumSize(
+      minimumWidth,
+      Math.min(windowMinHeight, display.workArea.height),
+    );
     sendWorkPanelResize("commit", panelWidth);
   };
 
@@ -381,17 +389,18 @@ export async function createWindow({
       reservationWidth: windowState.workPanelReservation.width,
       requestedWidth,
     });
-    const minimumWidth = Math.max(
-      windowMinWidth,
-      Math.min(display.workArea.width, windowMinWidth + next.reservation.width),
+    const minimumWidth = Math.min(
+      display.workArea.width,
+      windowMinWidth + next.reservation.width,
     );
+    const minimumHeight = Math.min(windowMinHeight, display.workArea.height);
     if (next.bounds.width < currentBounds.width) {
-      window.setMinimumSize(minimumWidth, windowMinHeight);
+      window.setMinimumSize(minimumWidth, minimumHeight);
     }
     windowState.expectedWorkPanelBounds = next.bounds;
     window.setBounds(next.bounds, false);
     if (next.bounds.width >= currentBounds.width) {
-      window.setMinimumSize(minimumWidth, windowMinHeight);
+      window.setMinimumSize(minimumWidth, minimumHeight);
     }
     const appliedBounds = window.getBounds();
     windowState.expectedWorkPanelBounds = appliedBounds;
@@ -572,10 +581,11 @@ export async function createWindow({
     if (window.isMaximized() || window.isFullScreen() || window.isMinimized()) return;
     const currentBounds = window.getBounds();
     const workArea = screen.getDisplayMatching(currentBounds).workArea;
-    window.setMinimumSize(
-      Math.min(windowMinWidth, workArea.width),
-      Math.min(windowMinHeight, workArea.height),
+    const minimum = clampMinimumSizeToWorkArea(
+      { width: windowMinWidth, height: windowMinHeight },
+      workArea,
     );
+    window.setMinimumSize(minimum.width, minimum.height);
     const fitted = clampBoundsToWorkArea(currentBounds, workArea);
     if (windowBoundsEqual(fitted, currentBounds)) return;
     windowState.expectedWorkPanelBounds = fitted;
@@ -655,6 +665,16 @@ export async function createWindow({
   // mistaken for one (D263).
   const reconcileDisplayTopology = () => {
     windowState.workPanelUserMovePending = false;
+    // A scale or text-size change shrinks the DIP work area in place; re-cap the
+    // minimum so the OS never enforces one the display cannot show (issue #1175).
+    // Keep the open work panel's reservation in the minimum; only cap it.
+    if (isLiveWindow() && !window.isFullScreen()) {
+      const minimum = clampMinimumSizeToWorkArea(
+        { width: workPanelMinimumWindowWidth(), height: windowMinHeight },
+        screen.getDisplayMatching(window.getBounds()).workArea,
+      );
+      window.setMinimumSize(minimum.width, minimum.height);
+    }
     reconcileWorkPanelDisplay();
   };
   screen.on("display-metrics-changed", reconcileDisplayTopology);
@@ -776,7 +796,11 @@ export async function createWindow({
     boundsGuard = true;
     try {
       if (window.isMinimized()) window.restore();
-      window.setMinimumSize(windowMinWidth, windowMinHeight);
+      const minimum = clampMinimumSizeToWorkArea(
+        { width: windowMinWidth, height: windowMinHeight },
+        screen.getDisplayMatching(electronBounds).workArea,
+      );
+      window.setMinimumSize(minimum.width, minimum.height);
       // Prefer normal layer so CG helpers and Stage Manager stay stable.
       window.setAlwaysOnTop(false);
       window.show();
@@ -1447,16 +1471,20 @@ export async function createWindow({
             await new Promise((r) => setTimeout(r, 250));
             captureViewportOverride = true;
             try {
-              windowState.mainWindow!.setMinimumSize(1040, 700);
-              windowState.mainWindow!.setSize(1040, 700, false);
+              windowState.mainWindow!.setMinimumSize(windowMinWidth, windowMinHeight);
+              windowState.mainWindow!.setSize(windowMinWidth, windowMinHeight, false);
               await new Promise((r) => setTimeout(r, 350));
               await probeWorkPanelHeader("minimum-supported");
               await shot("pi-panel-minimum-supported");
             } finally {
               windowState.mainWindow!.setSize(CODEX_BOUNDS.width, CODEX_BOUNDS.height, false);
+              const restoredMinimum = clampMinimumSizeToWorkArea(
+                { width: workPanelMinimumWindowWidth(), height: windowMinHeight },
+                screen.getDisplayMatching(windowState.mainWindow!.getBounds()).workArea,
+              );
               windowState.mainWindow!.setMinimumSize(
-                workPanelMinimumWindowWidth(),
-                windowMinHeight,
+                restoredMinimum.width,
+                restoredMinimum.height,
               );
               captureViewportOverride = false;
             }
@@ -1617,9 +1645,13 @@ export async function createWindow({
               `);
             } finally {
               windowState.mainWindow!.setSize(CODEX_BOUNDS.width, CODEX_BOUNDS.height, false);
+              const restoredMinimum = clampMinimumSizeToWorkArea(
+                { width: workPanelMinimumWindowWidth(), height: windowMinHeight },
+                screen.getDisplayMatching(windowState.mainWindow!.getBounds()).workArea,
+              );
               windowState.mainWindow!.setMinimumSize(
-                workPanelMinimumWindowWidth(),
-                windowMinHeight,
+                restoredMinimum.width,
+                restoredMinimum.height,
               );
               captureViewportOverride = false;
             }
@@ -2011,6 +2043,8 @@ export async function createWindow({
       window.webContents.openDevTools({ mode: "detach" });
     }
   } else {
-    await window.loadFile(join(__dirname, "../renderer/index.html"));
+    await window.loadFile(
+      join(getModuleDirectory(import.meta.url), "../renderer/index.html"),
+    );
   }
 }

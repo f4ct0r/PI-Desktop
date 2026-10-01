@@ -21,6 +21,8 @@ import {
 } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
 import { userMessageMenuItems } from "./menu-items";
+import { ActionSlotSide } from "./ActionBarSlots";
+import { slotMessage } from "../../../plugins/renderer-slots/slot-message";
 import { SessionMessageOrigin } from "./SessionMessageOrigin";
 import {
   AgentRefChip,
@@ -115,6 +117,8 @@ export const MessageRow = memo(function MessageRow({
   const editableUserMessage = isUser && !isSessionMessage;
   const workspaceRoot = useAppStore((s) => s.workspace?.path);
   const openFileRef = useOpenChatFileRef();
+  // userAction belongs to user cards; other rows keep a plugin-free bar.
+  const slotUser = isUser ? slotMessage("user", message) : undefined;
   // Slash prompts are stored expanded; editing works on the typed form so the
   // resent turn re-expands the template (D123).
   const editSeed =
@@ -340,6 +344,7 @@ export const MessageRow = memo(function MessageRow({
         {!editing && (hasAnswer || showRevisionPager) ? (
           <div className="message-actions">
             <MessageTimestamp createdAt={message.createdAt} />
+            <ActionSlotSide slot="userAction" side="left" message={slotUser} />
             {showRevisionPager ? (
               <div className="message-revision-pager" role="group" aria-label={t("chat.revisions")}>
                 <TooltipButton
@@ -398,6 +403,7 @@ export const MessageRow = memo(function MessageRow({
                 <IconTrash size={13} />
               </TooltipButton>
             ) : null}
+            <ActionSlotSide slot="userAction" side="right" message={slotUser} />
           </div>
         ) : null}
       </div>

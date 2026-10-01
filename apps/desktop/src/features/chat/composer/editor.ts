@@ -2,6 +2,7 @@ import {
   fileReferenceLabel,
   formatFileInsert,
 } from "@pi-desktop/shared";
+import type { ComposerPluginPart } from "../../../lib/composer-smart-stop";
 import type { ComposerFileReference } from "./model";
 
 export { type ComposerFileReference } from "./model";
@@ -41,6 +42,7 @@ export function createFileReference(
     kind?: "image" | "file";
     mimeType?: string;
     token?: string;
+    plugin?: ComposerPluginPart;
   },
 ): ComposerFileReference {
   composerFileReferenceSequence += 1;
@@ -48,10 +50,12 @@ export function createFileReference(
     id: `composer-file-${composerFileReferenceSequence}`,
     sessionId,
     path,
-    name: fileReferenceLabel(path, preferredName),
+    // A plugin mark's label is shown as given; it is no path.
+    name: isPluginMark(metadata) ? (preferredName ?? "") : fileReferenceLabel(path, preferredName),
     kind: metadata?.kind ?? (isImageFilePath(path) ? "image" : "file"),
     ...(metadata?.mimeType ? { mimeType: metadata.mimeType } : {}),
     ...(metadata?.token ? { token: metadata.token } : {}),
+    ...(metadata?.plugin ? { plugin: metadata.plugin } : {}),
   };
 }
 
@@ -92,6 +96,7 @@ type DraftMention = {
   description?: string;
   mimeType?: string;
   token?: string;
+  plugin?: ComposerPluginPart;
 };
 
 /**
@@ -112,10 +117,17 @@ export function restoreComposerReference(
     });
   }
   return createFileReference(reference.path, reference.name, sessionId, {
+    ...(reference.plugin ? { plugin: reference.plugin } : {}),
     kind: reference.kind,
     ...(reference.mimeType ? { mimeType: reference.mimeType } : {}),
     ...(reference.token ? { token: reference.token } : {}),
   });
+}
+
+/** A chip a plugin put in the draft that is text, not a file: a mark or the fold. */
+export function isPluginMark(reference: { plugin?: ComposerPluginPart } | undefined): boolean {
+  const kind = reference?.plugin?.kind;
+  return kind === "mark" || kind === "fold";
 }
 
 const CHIP_TOKEN_BASE = 0xe000;
@@ -302,10 +314,15 @@ const CHIP_ICON_SVG: Record<string, string> = {
     '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plugin:
+    '<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/>',
+  fold: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
 };
 
 function chipIconKey(reference: ComposerFileReference): string {
   if (isAgentReference(reference)) return "agent";
+  if (reference.plugin?.kind === "mark") return "plugin";
+  if (reference.plugin?.kind === "fold") return "fold";
   const mime = reference.mimeType ?? "";
   if (reference.kind === "image" || mime.startsWith("image/")) return "image";
   const name = reference.name;
@@ -325,8 +342,9 @@ function chipSvg(key: string, size = 13): string {
 
 export function isEditableTextReference(reference: ComposerFileReference): boolean {
   // A delegate has no file to expand into, and expanding one would delete the
-  // mention the user just made.
+  // mention the user just made; a plugin mark is text, not a file at all.
   if (isAgentReference(reference)) return false;
+  if (isPluginMark(reference)) return false;
   return reference.mimeType?.toLowerCase() === "text/plain" || /\.txt$/i.test(reference.name);
 }
 
@@ -348,13 +366,16 @@ function buildChipElement(
   chip.contentEditable = "false";
   chip.dataset.token = token;
   const agent = isAgentReference(reference);
-  chip.title = agent ? reference.description ?? `@${reference.path}` : reference.path;
+  // A mark names the plugin that put it there where a file names its path.
+  const origin = isPluginMark(reference) ? (reference.plugin?.pluginId ?? "") : reference.path;
+  if (isPluginMark(reference)) chip.dataset.pluginMark = reference.plugin?.kind;
+  chip.title = agent ? reference.description ?? `@${reference.path}` : origin;
   const editableText = isEditableTextReference(reference);
   const activate = editableText ? () => onExpandText(token) : undefined;
   chip.setAttribute("role", activate ? "button" : "listitem");
   chip.setAttribute(
     "aria-label",
-    agent ? `${reference.name} — agent` : `${reference.name} — ${reference.path}`,
+    agent ? `${reference.name} — agent` : `${reference.name} — ${origin}`,
   );
   if (activate) {
     chip.tabIndex = 0;
@@ -433,6 +454,11 @@ export function paintEditorValue(
       }
       // A private-use code point with no chip behind it is user text (for
       // example a Nerd Font glyph pasted from a terminal); keep it verbatim.
+    }
+    if (char === "\n") {
+      flush();
+      el.appendChild(document.createElement("br"));
+      continue;
     }
     textBuffer += char;
   }

@@ -9,6 +9,31 @@
 
 ---
 
+### E2E-LIVE-VOICE-public-settings-and-reconnect
+
+- **前提：** 生产 Renderer 构建、真实 Electron/Main/Host、隔离数据和测试项目、关闭开发者模式、本地 TLS Realtime fixture 及合成麦克风。仅在测试子进程中信任 fixture CA，不关闭 TLS、sender、沙盒或麦克风权限校验。
+- **步骤：** 在功能关闭时从 Composer 打开 Live，点击“打开设置”。通过设置搜索找到 Voice，绑定测试账号并启用；连接、取消静音、接收音频和字幕、静音并挂断。取消延迟启动，断开服务后显式重连；使用同一隔离配置重启，检查持久化设置并关闭功能。
+- **预期：** 普通用户可以到达入口；启用设置不会开始采集。真实构建中的 Renderer 通过精确主 frame 所有者校验。只使用所选账号，静音停止输入，每次结束释放媒体/socket，失败不会自动发起新通话。重启保留设置但不重连；旧 Dictation 设置不变，纯通话不创建 Agent 会话。
+- **覆盖：** `pnpm test:e2e:live-voice` 驱动真实构建及具体 Realtime GA adapter，连接本地 WSS；`live-voice-owner.test.mjs` 打包生产 owner 模块并验证其他文件/frame 被拒绝。合成音频不代表物理设备或真实 Provider 验收；命令和结果见 `docs/implementation/live-voice-public-readiness.md`。
+- **规格：** [实时语音](../03-runtime/live-voice.md)。
+
+### E2E-LIVE-WORK-session-admission
+
+- **前提：** 使用隔离的 Live Provider fixture、本地 AgentHost 会话和确定性意图分类器；候选请求须从现有 Live adapter 回调进入，不使用真实账号或付费端点。
+- **步骤：** 验证纯通话没有工作作用域时会拒绝任务候选；再以明确选择的本地会话和关闭的上下文共享启动工作通话。提交一个已声明工具请求并检查回执、Host admission 和 `voiceOrigin`。覆盖忙时独立排队、过期 steer、精确回合 stop、submit 返回前到达的终态事件，以及基于已记录结果的只读查询。请求项目／会话列表，确认只返回标签和本次 call 的 opaque 引用；通过面板动作打开已列会话、在已列项目中新建会话，并确认工作绑定仍固定。分别保持 Provider 生成、用户讲话和本地播放活跃，确认反馈须待三者空闲和静默窗口结束后才发送。覆盖 silent、静默时的显式查询、过期反馈降级；当提交处于等待用户决策状态时，确认紧凑栏保留等待提示、详情显示待决请求并提供打开该精确会话的操作，且其他会话的待决请求不会被归到绑定会话；当提交处于等待用户决策状态时，确认紧凑栏保留等待提示、详情显示待决请求并提供打开该精确会话的操作，且其他会话的待决请求不会被归到绑定会话。随后用语音回答该 AskTool 提问，确认会话卡片经由 Host 输入路径解决；再分别用提问从未提供的标签、只回答一部分、以及同时存在两个待答提问重试，确认每次都被拒绝、不产生写操作且不重试。结束通话时确认已受理工作仍保留。
+- **预期：** 工作始终绑定到通话开始时选定的会话；关闭上下文共享时不读取历史；现有 AgentHost 执行 prompt、steer、queue 和 stop；重复 Provider ID 不重复派发；结果查询只投影准确操作摘要且不会创建新回合。项目／会话选项不暴露原始路径或 ID，引用按 call 隔离并过期；打开只导航，创建必须先列出注册项目并由用户点击确认。自动反馈同时观察 Provider 生成状态和本地播放活动，任务执行与反馈投递状态分开。结束 Live 不取消已受理任务；Renderer 信号不代表用户已经听到结果。
+- **覆盖：** `apps/desktop/test/live-voice-service.test.mjs` 覆盖纯通话拒绝、显式工作作用域和 Provider／用户／本地播放的反馈门控及独立投递状态；`packages/host-runtime/src/live-work/coordinator.test.ts` 覆盖回执顺序、路由、过期 steer、去重、关闭通话、早到终态和选择流程；`packages/host-runtime/src/live-work/feedback-scheduler.test.ts` 覆盖防抖、播报间隔、silent、过期降级、去重与溢出；`packages/host-runtime/src/live-work/context.test.ts` 覆盖上下文投影与 opaque 引用；`packages/host-runtime/src/live-work/result-summary.test.ts` 覆盖精确回合摘要和诚实回退；`packages/agent-host/src/agent-host.test.ts` 覆盖无历史快照、队列和语音来源；`packages/voice-runtime/src/live/protocol.test.ts` 覆盖 Provider 工具及反馈编码；`apps/desktop/test/live-work-scope.test.mjs` 覆盖引用作用域／过期，`live-work-operations.test.mjs` 覆盖面板动作，`live-work-decision.test.mjs` 覆盖等待决策投影、会话作用域、有界纯文本渲染与打开绑定会话的面板操作，`voice-runtime/src/live/playback-monitor.test.ts` 覆盖本地音频信号检测；`packages/host-runtime/src/live-work/ask-answer.test.ts` 覆盖语音回答意图与路由（解决、拒绝、unknown 且绝不重发），`apps/desktop/test/spoken-answer.test.mjs` 覆盖只选既有选项的匹配、有界朗读内容与投递预算。该自动化覆盖仍不等于 W2-001—W2-096 全矩阵，也不代表真实 Provider／设备验收。
+- **状态：** 部分完成；其余场景和实机矩阵见 `docs/implementation/live-work-evidence.md`。
+
+### E2E-LIVE-WORK-v2.1-reliability
+
+- **前提：** 隔离的本地 Host 会话、fixture 分类器和 fake runtime/provider I/O。不使用真实账号、用户项目或正在运行的 Desktop 实例。
+- **步骤：** 在 Provider 候选入口捕获 null/活动回合目标并延迟分类；让通过校验的 stop 与普通分类竞争；让 Host 派发保持未决，随后返回精确的只读准入证据；先到达终态事件再返回写操作 ACK；在派发期间关闭 Live；在 AgentHost 准入前更改已授权的工作区；提交独立工作队列项；延迟最终助手消息持久化；在 stop 控制操作后查询任务结果。
+- **预期：** 过期/null 目标不会变成之后的回合。stop 屏障会撤回尚未跨过准入边界的较早写操作。忙碌时的普通提交不会悄悄进入队列。Host 状态不确定时显示 unknown，并且只核对、不再次写入。终态证据不会被迟到 ACK 复活或覆盖。工作区不匹配不会创建回合或队列项。空闲时的显式队列项由 AgentHost 排空，恢复后挂起的条目保持挂起。结果查询只返回准确的任务结果，不返回准入或 stop 确认。
+- **覆盖：** `packages/host-runtime/src/live-work/coordinator.test.ts`、`packages/host-runtime/src/live-work/operation-ledger.test.ts`、`packages/agent-host/src/agent-host.test.ts`、`apps/desktop/test/live-work-production-composition.test.mjs` 和 `apps/desktop/test/agent-host-bridge-work-ack.test.mjs`。生产组合 fixture 实例化 Live Work bridge、AgentHost bridge、已注册的 `agentPrompt` handler 和真实 AgentHost；Host Core 持久化、具体 Provider adapter/transport 和真实设备旅程不在该测试边界内。
+- **状态：** 自动化覆盖为部分完成，逐项记录于 `docs/implementation/live-work-v21-coverage.md`。实机验收未运行。
+- **规格：** [live-work-session](../03-runtime/live-work-session.md)、[live-voice](../03-runtime/live-voice.md)。
+
 ### E2E-POWER-keep-awake-setting
 
 - **前提：** 设置值缺失的隔离桌面配置；无需真实模型服务。
@@ -47,6 +72,53 @@
 - 作为可追溯性主干：场景 ID ↔ 验收标准 ↔ 规范。
 - 定义代码 pull request 的相关 E2E 合入门。
 - 让验证证据与准备合入的可执行提交保持关联。
+
+### E2E-LIVE-VOICE-four-stage-ui
+
+- **标题：** 已禁用、准备、紧凑通话栏和主动打开的详情。
+- **前提：** 使用隔离的开发构建 Electron 配置，开启开发者模式，Live Voice
+  初始为禁用状态，并使用确定性的本地服务商/媒体 fixture 和本地工作会话
+  fixture。不使用真实账号、麦克风、扬声器、付费端点或用户正在运行的 Desktop。
+- **步骤：**
+  1. 确认禁用时 Composer 中既没有 Live Voice 图标，也没有 Work 图标。仅从
+     「设置 → 语音」启用 Live Voice，并确认空闲时恰好显示一个语音图标。
+  2. 打开准备界面，展开并折叠工作选项，但不开始通话。确认没有准备请求、
+     麦克风获取、媒体初始化、服务商连接或工作派发。让选中的绑定不可用，
+     同时保持另一个绑定就绪：界面显示确切的选中身份和原因、禁用开始操作，
+     且不会隐式切换服务商。
+  3. 绑定就绪后，明确开始并观察紧凑栏显示「连接中」和「取消」，确认不会
+     自动打开详情。在准备或媒体获取仍未完成时取消，再送达延迟的完成事件。
+     再次开始并连接，确认默认静音，然后取消静音/静音并检查状态。
+  4. 打开详情，检查转录、服务商和工作状态，然后分别通过关闭、点击外部和
+     Escape 关闭详情。通话保持连接；通过通话栏恢复暂停的声音，观察恢复失败，
+     再明确重试并恢复。
+  5. 在聊天、设置、插件和会话间导航。在 Main 延迟终止和 Renderer 延迟清理的
+     情况下结束通话或禁用功能，并分别测试两种清理完成顺序。在两者完成前，
+     始终显示「结束中」，且不允许再次开始。模拟释放未确认，确认阻止状态可见。
+  6. 重新打开准备界面，确认工作授权和上下文确认均未勾选。仅展开区域或选择
+     会话不会开始通话；未授权工作时开始只启用语音。明确授权工作请求、选择
+     有效的本地目标并开始；在详情中检查固定绑定和工作结果。结束后重新打开
+     准备界面，再分别变更/创建目标、取消工作授权或取消通话，并确认上下文
+     确认被重置。结束 Live 不会停止已受理的工作。
+  7. 使用已配置的切换快捷键直接开始纯语音通话并结束。启动期间，如果弹窗
+     消费了 Escape，则它只会关闭弹窗，不会取消启动；没有弹窗消费时，启动取消
+     快捷键才生效。Escape 不会结束已连接的通话。用英文和简体中文分别检查
+     可见控件，并确认所有已发布语言目录都齐全。
+- **预期：** 四种明确的界面状态、主动启动和工作授权、确切绑定的就绪状态、
+  默认静音、全局清理状态可见、控件无障碍属性和焦点返回正确，且 IPC、持久化或
+  权限边界没有变化。恢复播放和错误处理不需要打开详情。
+- **规格：** [Live Voice](../03-runtime/live-voice.md)、
+  [Live Work](../03-runtime/live-work-session.md)、
+  [组件规格](../04-ux/08-component-spec.md#1171-live-voice-准备-紧凑通话栏和详情)、
+  [设置 IA](../04-ux/06-settings-ia.md#voice-experimental)。
+- **验收：** C / E / Security / Quality。
+- **里程碑：** MVP 后实验性交互维护。
+- **覆盖：** 定向控制器/展示回归测试和 `pnpm test:e2e:live-voice-interaction`
+  覆盖已挂载的生产控件、控制器、store、快捷键、i18n、清理顺序、工作授权，
+  以及使用模拟 shell 导航和伪造外部边界的错误恢复。该测试不会挂载完整的
+  AppShell/设置/插件路由，也不会实际使用服务商、设备、权限提示或音频输出。
+- **状态：** 请求候选 fixture 的 48/48 项交互检查通过。完整 AppShell、真实服务商
+  和设备兼容性尚未验证。
 
 ## 2. 非目标
 
@@ -330,7 +402,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 #### E2E-005I：从选择器标题重新获取服务模型列表
 
 - **前提条件**：添加或编辑服务（或厂商账户）对话框已打开，且该服务可访问并提供 `/models` 列表。
-- **步骤**：1) 确认左侧标题旁有「获取列表」，在有效端点就绪前为禁用。2) 填入有效端点。确认在 600 ms 防抖等待期间「获取列表」已可用。立刻点击；确认它不等待该窗口，探测时显示加载文案，然后列出模型。3) 再次点击「获取列表」。确认加载期间保留当前行，并以实时结果替换。4) 让服务离线后再点「获取列表」；确认出现分类错误且先前的行仍在。5) 恢复服务，再点「获取列表」，确认实时列表回来。6) 在厂商账户编辑对话框重复上述步骤。
+- **步骤**：1) 确认左侧标题旁有「获取列表」，在有效端点就绪前为禁用。2) 填入有效端点。确认在 600 ms 防抖等待期间「获取列表」已可用。立刻点击；确认它不等待该窗口，探测时显示加载文案，然后列出模型。3) 再次点击「获取列表」。确认加载期间保留当前行，并以实时结果替换。4) 让服务离线后再点「获取列表」；确认分类错误以 toast 出现且先前的行仍在。5) 恢复服务，再点「获取列表」，确认实时列表回来。6) 在厂商账户编辑对话框重复上述步骤。
 - **预期**：标题上的操作会立刻向服务探测，包括端点刚变为有效后的防抖等待期间。凭据变更触发的自动发现不变。两种凭据都有同一控件，因为两个对话框共用该选择器。
 - **链接规格**：`03-runtime/13-model-catalog-and-selection.md`、
   `04-ux/06-settings-ia.md`、`04-ux/08-component-spec.md`
@@ -793,7 +865,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
   输入并清空文本、聚焦并失焦文本区域后等待，确认文案不变。3）切换到会话 B，再切回 A，
   分别记录提示变化。4）在首页和会话间切换，检查命令/文件和快捷键提示。5）输入 `/` 并检查斜杠菜单，包含英文/中文长描述、短描述、无描述、
   独立标题和参数提示以及超长斜杠名称的 Skill；再检查 `@` 模式中的长文件名。
-  在 1040px 和 1680px 视口、320px 和 640px 输入框宽度下重复。
+  在 800px 和 1680px 视口、320px 和 640px 输入框宽度下重复。
   6）切换到 zh-CN，重复上下文切换检查。
 - **预期**：首次渲染的上下文从欢迎语开始，在页面/会话上下文变化前保持不变。每次上下文切换才推进到
   下一条本地化命令/文件或快捷键提示，并使用透明度渐变；不存在计时器驱动的变化。快捷键提示包含
@@ -891,14 +963,14 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **里程碑**：M3
 - **状态**：自动化（协议烟雾：示例项目中的 Read + Glob）
 
-### 权限允许/拒绝/超时
+### 权限允许/拒绝/取消
 
 #### E2E-014：Write/Edit/Bash 触发权限卡
 
 - **先决条件**：Agent 模式；项目开放。
 - **步骤**： 1) 要求代理写入文件。 2）遵守许可卡。
 - **预期**：许可卡内联显示在原始成绩单中
-  包含工具名称、工作区、参数预览、倒计时和 allow/deny
+  包含工具名称、工作区、参数预览和 allow/deny
   选项。它不创建背景或模式，也不覆盖其他会话。
 - **链接规格**：`04-ux/03-permission-ux.md`、`03-runtime/03-tools-and-permissions.md`
 - **接受**：E（Write/Edit/Bash 触发确认）
@@ -925,13 +997,13 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **里程碑**：M3
 - **状态**：草案
 
-#### E2E-017：权限超时默认为拒绝
+#### E2E-017：本地权限确认没有自动截止时间
 
 - **前提条件**：显示许可卡；没有用户操作。
-- **步骤**： 1) 等待 120 秒而不响应权限卡。 2）观察结果。
-- **预期**：超时后自动拒绝权限；工具未执行。
+- **步骤**：1) 不响应权限卡。2) 确认卡片仍可见且工具仍在等待。3) 点击拒绝并观察结果。
+- **预期**：没有倒计时或自动拒绝；请求会一直等到明确拒绝，工具不会执行。
 - **链接规格**：`03-runtime/03-tools-and-permissions.md`
-- **接受**：E（超时→拒绝）
+- **接受**：E（无倒计时，明确决定→结果）
 - **里程碑**：M3
 - **状态**：草案
 
@@ -1164,7 +1236,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 #### E2E-043：设置内容跟随窗口宽度
 
 - **先决条件**：应用程序在 macOS 上以窗口方式运行，并且打开“设置”。
-- **步骤**： 1) 以默认窗口宽度打开Basics，并记录内容卡宽度。 2) 将窗口扩展到 1600px 宽。 3) 打开模型配置、导入和项目存档。 4) 将窗口缩小到支持的最小 1040px。
+- **步骤**： 1) 以默认窗口宽度打开Basics，并记录内容卡宽度。 2) 将窗口扩展到 1600px 宽。 3) 打开模型配置、导入和项目存档。 4) 将窗口缩小到支持的最小 800px。
 - **预期**：右侧内容卡在每个测试宽度上随可用窗格展开和收缩； 275px 导轨和窗格排水沟保持稳定；控件保持可见，无需剪切或水平页面滚动。
 - **链接规格**：`04-ux/06-settings-ia.md`、`04-ux/07-ui-design-system.md`
 - **验收**：质量（关键操作感觉很精致）
@@ -1618,7 +1690,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 #### E2E-033：重新启动后窗口边界仍然存在
 
 - **先决条件**：应用程序以默认窗口大小运行。
-- **步骤**： 1) Resize/move 将窗口设置为不同的正常边界 A (≥1040×700)，在 600 毫秒保存去抖动结束之前最大化，退出并重新启动。 2) 恢复，resize/move 到不同的边界 B，在去抖结束之前退出，然后再次重新启动。
+- **步骤**： 1) Resize/move 将窗口设置为不同的正常边界 A (≥800×560)，在 600 毫秒保存去抖动结束之前最大化，退出并重新启动。 2) 恢复，resize/move 到不同的边界 B，在去抖结束之前退出，然后再次重新启动。
 - **预期**：每次重新启动都会恢复最新的正常范围（A，然后 B），包括在最大化或等待保存时发生退出。 Maximized/fullscreen 几何图形永远不会存储为法线边界； invalid/tiny 保存的边界回退到默认值 1200×800。
 - **链接规格**：`04-ux/09-interaction-patterns.md`
 - **验收**：质量（关键操作感觉很精致）
@@ -3221,7 +3293,7 @@ IPC 请求无法关闭。
 - **预期**：B的后台事件仅更新B的行和保留状态；
   他们不会更改 A 的活动 session/project/page、记录、草稿、卷轴、
   或键盘焦点，并且不会出现全局模式。打开 B 仅显示 B
-  内联卡及其原始倒计时。两个请求保持独立
+  内联卡且没有倒计时。两个请求保持独立
   可操作，并且解决B并没有清除A。最终的快速选择保持不变
 即使 A 的较旧负载稍后完成，也会在 B 上执行。仅明确通知或
   会话激活可以导航。 A 的批准后审阅卡仅保留在
@@ -3234,7 +3306,7 @@ IPC 请求无法关闭。
 - **验收**：C（会话隔离）、E（权限隔离）、质量
 - **里程碑**：M5
 - **状态**：单位覆盖（`permission-inline.test.mjs` 表示作用域状态，
-  内嵌渲染契约、绝对倒计时、最新选择守护；
+  内嵌渲染契约、无倒计时行为、最新选择守护；
   用于会话范围的 `work-panel.test.mjs` 和 `browser-preview-tool.test.mjs`
   工件保留和路由）；完整的 UI 场景草稿
 
@@ -3517,6 +3589,11 @@ IPC 请求无法关闭。
   8. 运行模型调用远低于硬预算的 `new_context` 的回合。
   9. 空闲时手动调用 `/compact`。
 - **预期**：
+  - 每个检查点的摘要请求都携带会话自己的对话身份：在 Responses 形状的提供商
+    （`openai-responses`、`openai-codex-responses`）上，出站载荷会像会话的普通
+    回合一样把会话 id 作为 `prompt_cache_key` 发出，因此对接 Codex 后端的网关会
+    接受该请求，而不是返回 400 `invalid_responses_request`。其他线协议的提供商
+    保持不变。
   - 每个 `turn_end` 在另一个提供商请求之前都会被评估，并且永远不会
     标记整体任务空闲； composer/config 控件保持阻塞状态，直到
     `agent_end`、`error` 或仅手动的 `compaction_end`。
@@ -4534,6 +4611,22 @@ eleven-tool-round desktop paths are verified by
 - **里程碑**：M6+
 - **状态**：草稿。必需套件：`test:e2e`、`test:e2e:subagents`。
 
+#### E2E-SUBAGENT-output-token-limit-is-a-visible-failure：输出 token 上限必须可见地失败
+
+- **先决条件**：Agent 会话使用确定性的本地提供程序；提供程序在产生非空的助手文本后，以
+  `stopReason: "length"` 或 `"max_tokens"` 结束。委派有有效报告且没有待处理的工具调用。
+- **步骤**：1）委派任务并让提供程序在输出 token 上限处结束。2）读取 Task 结果、生命周期
+  details 和委派卡片。3）用一次正常结束的提供程序响应恢复或重试同一工作。
+- **预期**：第一次运行以 `failed` 结算，而不是 `completed`，并带有
+  `SUBAGENT_OUTPUT_TRUNCATED` 和 `outputTruncated: true`。父级收到明确解释，且部分报告保留在
+  `Its last output was:` 下面。后续以 `stop` 正常结束的回合会清除标记并以 `completed` 结算；
+  部分报告的运行绝不会伪装成已完成报告。
+- **链接规格**：`03-runtime/02-agent-runtime.md` §5f、`03-runtime/08-error-codes.md` §3.2
+- **验收**：C（对话）、H（诊断）、品质
+- **里程碑**：M6+
+- **状态**：由 `packages/agent-runtime/src/subagent.test.ts` 单元覆盖；完整桌面旅程仍需运行：
+  `test:e2e`、`test:e2e:subagents`。
+
 #### E2E-SUBAGENT-context-overflow-reports-actionable-failure
 
 - **先决条件**：同一个注入的小窗口伪提供商，窗口小到连降级后的上下文也放不下。
@@ -5362,15 +5455,22 @@ eleven-tool-round desktop paths are verified by
   确认来源仍为 Responses 和原别名，副本保存了 Anthropic Messages 与新
   别名。未测试携带凭据的网络发现、外部模型请求及 OpenCode Go UI 分支。
 
+**E2E-CHAT-session-todo-checklist：TodoWrite 到按会话显示的 TodoDock**
+
+- **前提：** 隔离的本地 Electron 配置、确定性的 Agent/Host fixture、两个 Desktop 会话，不使用真实 Provider 或付费 API。
+- **步骤：** 启动调用 `TodoWrite` 的多步骤 Agent 回合，观察 Composer 上方的 TodoDock，展开后切换会话并确认清单隔离。完成和取消条目，确认最多显示八条以及全部取消状态；清空清单后重载/重启 Host。发送乱序旧 `todos.changed` 事件，确认它不能覆盖新快照；再覆盖非法参数、Plan/Goal、委托和远程会话路径。
+- **预期：** Host SQLite 是权威状态；每次成功全量替换（包括清空）都会推进 revision 并只发出一次已提交的 `todos.changed`。非法或未授权写入既不修改也不发事件。TodoDock 渲染纯文本、不抢焦点、切换会话时收起、拒绝旧事件，并对 `remote:` 会话跳过本地恢复，因为 RACP v1 没有 Todo 快照操作。
+- **链接规格：** `03-runtime/03-tools-and-permissions.md`、`03-runtime/04-data-storage.md`、`03-runtime/06-host-rpc-protocol.md`、`04-ux/08-component-spec.md`、ADR 0312。
+- **验收：** C / E / F / Quality / Security。
+- **里程碑：** M6+。
+- **自动化：** `pnpm test:e2e:todos` 从生产 Agent 的 ToolSearch/TodoWrite 路径进入，使用生产渲染器、真实 Host/SQLite 和隔离 Electron 配置验证清单旅程；仅替换外部模型流和 preload 传输，不使用真实 Provider 或用户配置。覆盖 Unicode 截断及警告重放、单一活动项归一化、首次读取失败后不切换会话的主机恢复、已缓存快照重新同步及旧事件拒绝。运行时 `runtime-todos.test.ts` 使用确定性 Provider 验证 Agent 工具校验、超长内容归一化和续跑。
+- **状态：** 构建 Desktop 和 Host 后，在确切的请求候选中执行。Host-core 和渲染器定向测试是辅助检查，不能替代 Electron 用户旅程。
+
 ## 8. 可追溯性矩阵
-
-
-
-
-
-
 | 验收 | 应用场景 |
 |---|---|
+| C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
+| C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
 | C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle |
@@ -5440,6 +5540,7 @@ eleven-tool-round desktop paths are verified by
 
 | 里程碑 | 应用场景 |
 |---|---|
+| MVP 后实验性交互维护 | E2E-LIVE-VOICE-four-stage-ui |
 | M1 | E2E-001、E2E-002、E2E-003、E2E-028、E2E-029 |
 | M2 | E2E-004、E2E-005、E2E-006、E2E-007、E2E-008、E2E-008d、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-020、E2E-021、E2E-027、E2E-031、 E2E-036、E2E-037、E2E-042、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-144、E2E-005J、E2E-201 |
 | M3 | E2E-012、E2E-013、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-040 |
@@ -5665,8 +5766,8 @@ eleven-tool-round desktop paths are verified by
 
 
 ### US-UI-19 永久舞台管理器边界恢复（仅 macOS）
-- 在使用 Stage Manager 的 macOS 上，缩小或取消聚焦 PI 窗口，直到宽度 < 1040 或高度 < 700。
-- 预计外壳会重新声明类似 Codex 的足迹（~1200×800，最小 1040×700）并在仍然折叠的情况下继续恢复（不仅在发射后的前 20 秒内）。
+- 在使用 Stage Manager 的 macOS 上，缩小或取消聚焦 PI 窗口，直到宽度 < 800 或高度 < 560。
+- 预计外壳会重新声明类似 Codex 的足迹（~1200×800，最小 800×560，按显示器工作区裁剪）并在仍然折叠的情况下继续恢复（不仅在发射后的前 20 秒内）。
 - 该恢复看门狗仅限 macOS（D447）。在 Windows/Linux 上它必须完全不运行：应用绝不能在无人操作时重新调整或抬升自己的窗口。聚焦其他窗口，确认 PI-Desktop 留在其后方而不是跳回窗口栈顶端，并且栈序检查（`xprop -root _NET_CLIENT_LIST_STACKING`）不会显示它周期性回到顶端。
 
 ### US-UI-20 深色浮动编辑框
@@ -5906,7 +6007,7 @@ eleven-tool-round desktop paths are verified by
 - 期望工作主题选择器没有惰性切换或开放目标行。
 - 期待权限+基础+外观提升卡； Agent，
 导入和信息仍然是唯一的其他目的地。
-- 在 1040 像素、1200 像素和 1600 像素宽度之间调整大小；内容卡填充
+- 在 800 像素、1200 像素和 1600 像素宽度之间调整大小；内容卡填充
   每种尺寸都可用右窗格，无需更换导轨或引入
   水平滚动。
 
@@ -6204,8 +6305,7 @@ eleven-tool-round desktop paths are verified by
 - 没有背景、模态、page/session 开关、工作面板隐藏、转录
   A 中的替换或输入框焦点更改。B 保留其挂起状态。
 - 明确打开 B 并期望在 B 最新的之后有一张内联权限卡
-  活动，具有可读的风险、参数、工作区、倒计时和包装操作
-  控制。切换回来可以保留绝对期限。
+  活动，具有可读的风险、参数、工作区和包装操作控制。切换回来仍保留待处理请求，但没有截止时间。
 - 将A和B一起挂起，各自独立解决，并且都不确认
 操作删除或更改另一张卡。
 - 解析A的Write/Edit权限，完成前切换到B。预计不会
@@ -6805,7 +6905,7 @@ eleven-tool-round desktop paths are verified by
      分隔线首选项不变。
   4. 等待调整大小稳定后关闭并重新启动应用。
 - **预期**：无边框外壳仍提供原生边缘和角落命中区域，最小尺寸保持
-  1040×700，恢复看门狗不会与慢速调整大小流竞争。最后稳定的基础边界会
+  800×560（按显示器工作区裁剪），恢复看门狗不会与慢速调整大小流竞争。最后稳定的基础边界会
   在重新启动后恢复；临时工作面板预留宽度不会被保存为用户的聊天窗口尺寸。
 - **链接规格**：`03-runtime/01-ipc-protocol.md`、`04-ux/01-ui-ia.md`、
   `04-ux/07-ui-design-system.md`、`04-ux/08-component-spec.md`、
@@ -8729,6 +8829,27 @@ the latest destination. These assertions measure work counts, not device FPS.
 - **Milestone**: Maintenance.
 - **Status**: Covered by the existing HTTP client integration fixture and a
   focused component-render validation; no live IDA process required.
+
+### E2E-MCP-HTTP-SSE-held-open — A streamable HTTP reply lands before the server ends the stream (issue #1188)
+
+- **Preconditions**: A local mock Streamable HTTP server writes its JSON-RPC
+  reply immediately and keeps the `text/event-stream` body open well past the
+  client's handshake budget — the shape `https://gitmcp.io/docs` shows, where
+  initialize is answered in about two seconds and the stream only ends about
+  twelve seconds later. No provider credentials needed.
+- **Steps**: Configure that server with the `http` transport and a handshake
+  budget shorter than the stream lifetime; connect, discover the tools, and call
+  one. Repeat with a server that keeps the stream open and never answers.
+- **Expected**: Handshake, discovery, and the call complete as soon as their
+  reply event arrives, so the connection reports `ready` with the discovered
+  tools instead of `mcp initialize timed out after <budget>ms`. A server that
+  never replies still fails with `TIMEOUT` inside the same budget, and a stream
+  left open past its request is aborted rather than kept open.
+- **Specs**: 07-plugins/01-plugin-system §12.2; ADR 0038.
+- **Acceptance**: HTTP transport integration and the main-process MCP handshake.
+- **Milestone**: Maintenance.
+- **Status**: Automated by `apps/desktop/test/plugin-mcp.test.mjs` (held-open
+  reply case); no live app process required.
 
 ### E2E-PLUGIN-crash-report-names-the-exit-code
 

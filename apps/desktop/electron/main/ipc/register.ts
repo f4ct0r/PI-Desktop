@@ -32,6 +32,8 @@ import { registerComposerIpc } from "./composer-ipc";
 import { createSubagentCatalogLoader } from "../subagent-catalog";
 import { registerSpeechIpc } from "./speech-ipc";
 import { registerVoiceIpc } from "./voice-ipc";
+import { registerLiveVoiceIpc } from "./live-voice-ipc";
+import type { LiveCallService } from "../live-voice/call-service";
 import type { IpcRegistrar } from "./types";
 import type { createTraySessions } from "../tray-sessions";
 import type { createTaskbarUnreadBadge } from "../taskbar-unread-badge";
@@ -56,6 +58,7 @@ export type RegisterIpcDependencies = {
   setNotificationViewingSessionId: (sessionId: string | null) => void;
   activeUserSubagentDocuments: (...args: any[]) => Promise<any>;
   disabledBuiltinSubagents: () => Promise<string[]>;
+  liveCallService?: LiveCallService;
   mcpOAuth?: McpOAuthManager;
   [name: string]: any;
 };
@@ -160,6 +163,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     isDeveloperMode,
     sendToRenderer,
     voiceService,
+    liveCallService,
   } = dependencies;
 
 
@@ -270,6 +274,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     applyKeepAwakeWhileRunning,
     applyUpdatePreference: (preference) => updater.setPreference(preference),
     resolveEffectiveCommandShell,
+    liveCallService,
   });
   registerConfigSyncIpc({
     registrar,
@@ -286,6 +291,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     listRuntimeProviders,
     enrichProviderList,
     bindingForModel,
+    onProviderInvalidated: (providerId) => liveCallService?.invalidateProvider(providerId),
   });
   const loadComposerTemplatesCached = createComposerTemplateLoader(logger);
   const composerCommandService = registerComposerIpc({
@@ -467,6 +473,9 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
 
   if (voiceService) {
     registerVoiceIpc({ registrar, voiceService });
+  }
+  if (liveCallService) {
+    registerLiveVoiceIpc({ registrar, service: liveCallService, getMainWindow });
   }
 
   registerRemoteHostIpc({ registrar });

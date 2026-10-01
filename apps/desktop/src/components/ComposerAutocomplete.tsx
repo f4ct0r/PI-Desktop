@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ComposerCommand } from "@pi-desktop/shared";
-import type { AutocompleteItem, useComposerAutocomplete } from "../hooks/use-composer-autocomplete";
+import type {
+  CompletionController,
+  CompletionItem,
+} from "../features/chat/composer/hooks/useComposerCompletions";
 import {
   IconBookOpen,
   IconBot,
@@ -65,7 +68,7 @@ export function ComposerAutocomplete({
   onAccept,
 }: {
   anchorRef: React.RefObject<HTMLElement | null>;
-  ac: ReturnType<typeof useComposerAutocomplete>;
+  ac: CompletionController;
   onAccept: (index: number) => void;
 }) {
   const { t } = useTranslation();
@@ -80,7 +83,7 @@ export function ComposerAutocomplete({
 
   if (!ac.open) return null;
 
-  const renderRow = (item: AutocompleteItem, index: number) => {
+  const renderRow = (item: CompletionItem, index: number) => {
     const active = index === ac.highlight;
     const rowClass = `composer-plus-item composer-ac-item ${active ? "kb-active" : ""}`;
     const commonProps = {
@@ -89,6 +92,8 @@ export function ComposerAutocomplete({
           ? `c:${item.command.kind}:${item.command.name}`
           : item.kind === "agent"
             ? `a:${item.agent.name}`
+            : item.kind === "plugin"
+              ? `pl:${item.pluginId}:${index}`
             : `p:${item.entry.path}`,
       type: "button" as const,
       role: "option" as const,
@@ -144,6 +149,17 @@ export function ComposerAutocomplete({
         </button>
       );
     }
+    if (item.kind === "plugin") {
+      return (
+        <button {...commonProps} title={item.row.detail}>
+          <span className="composer-ac-icon">
+            <IconPlug size={14} />
+          </span>
+          <span className="composer-ac-name">{item.row.label}</span>
+          {item.row.detail ? <span className="composer-ac-desc">{item.row.detail}</span> : null}
+        </button>
+      );
+    }
     const isDir = item.entry.kind === "dir";
     const name = item.entry.path.split("/").pop() ?? item.entry.path;
     const displayName = `${name}${isDir ? "/" : ""}`;
@@ -164,23 +180,38 @@ export function ComposerAutocomplete({
   const rows: React.ReactNode[] = [];
   let lastGroup: string | null = null;
   ac.items.forEach((item, index) => {
-    const group =
-      item.kind === "command"
-        ? item.command.kind
-        : item.kind === "agent"
-          ? "agent"
-          : "path";
-    if (group !== lastGroup) {
-      lastGroup = group;
-      // Every section is labelled, the file rows included. Leaving the
-      // trailing group unlabelled made those rows read as part of whichever
-      // label preceded them, so an "@" menu holding both kinds showed the
-      // delegates and the files under one heading (ADR 0308).
+    if (item.kind === "command") {
+      const group = item.command.kind;
+      if (group !== lastGroup) {
+        lastGroup = group;
+        rows.push(
+          <div key={`g:${group}`} className="composer-model-group-label">
+            {t(GROUP_KEYS[group])}
+          </div>,
+        );
+      }
+    } else if (item.kind === "plugin" && lastGroup !== `plugin:${item.pluginId}`) {
+      // A plugin's rows sit under its own name, after the host's.
+      lastGroup = `plugin:${item.pluginId}`;
       rows.push(
-        <div key={`g:${group}`} className="composer-model-group-label">
-          {t(GROUP_KEYS[group])}
+        <div key={`g:${lastGroup}`} className="composer-model-group-label">
+          {item.pluginName}
         </div>,
       );
+    } else if (item.kind !== "plugin") {
+      // Every remaining section is labelled, the agent and file rows included.
+      // Leaving those groups unlabelled made them read as part of whichever
+      // label preceded them, so an "@" menu holding both kinds showed the
+      // delegates and the files under one heading (ADR 0308).
+      const group = item.kind === "agent" ? "agent" : "path";
+      if (group !== lastGroup) {
+        lastGroup = group;
+        rows.push(
+          <div key={`g:${group}`} className="composer-model-group-label">
+            {t(GROUP_KEYS[group])}
+          </div>,
+        );
+      }
     }
     rows.push(renderRow(item, index));
   });
@@ -199,7 +230,13 @@ export function ComposerAutocomplete({
       onClose={ac.close}
       anchorRef={anchorRef}
       menuClassName="composer-autocomplete"
-      label={t(ac.mode === "file" ? "chat.referenceMenu" : "chat.slashMenu")}
+      label={t(
+        ac.mode === "plugin"
+          ? "chat.pluginTriggerMenu"
+          : ac.mode === "file"
+            ? "chat.referenceMenu"
+            : "chat.slashMenu",
+      )}
       role="listbox"
       side="top"
       matchAnchorWidth

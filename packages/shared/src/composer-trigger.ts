@@ -217,6 +217,9 @@ export function buildAgentDispatchInstruction(names: string[]): string {
 }
 
 
+/** What serialization reads of a reference's plugin part (`send` of a mark). */
+type ComposerReferencePluginPart = { readonly kind?: string; readonly send?: string };
+
 /** Insertion text for an accepted slash command: `/name ` ready for args. */
 export function formatCommandInsert(name: string): string {
   return `/${name} `;
@@ -248,7 +251,7 @@ export function fileReferenceLabel(path: string, preferredName?: string): string
  */
 export function serializeComposerFileReferences(
   draft: string,
-  references: ReadonlyArray<{ path: string; token?: string }>,
+  references: ReadonlyArray<{ path: string; token?: string; plugin?: ComposerReferencePluginPart }>,
 ): string {
   const content = serializeInlineComposerFileReferences(draft, references);
   const paths = references
@@ -264,7 +267,9 @@ export function serializeComposerFileReferences(
 /**
  * Resolve only inline generated tokens (legacy @name strings or single
  * sentinel characters backing atomic chips). Each resolved token keeps one
- * separating space so adjacent chips never fuse their @paths together.
+ * separating space so adjacent chips never fuse their @paths together. A
+ * plugin mark's token resolves to the text it sends (`plugin.send`) instead
+ * of a path.
  *
  * A delegate mention also needs a leading space when text precedes it. The
  * send-time resolver only reads an `@token` at a start or after whitespace —
@@ -279,13 +284,16 @@ export function serializeInlineComposerFileReferences(
     path: string;
     token?: string;
     kind?: "image" | "file" | "agent";
+    plugin?: ComposerReferencePluginPart;
   }>,
 ): string {
   let content = draft;
   for (const reference of references) {
     const token = reference.token?.trim();
     if (!token || !content.includes(token)) continue;
-    const insert = formatFileInsert(reference.path, "file").trim();
+    const send = reference.plugin?.send;
+    const insert =
+      typeof send === "string" ? send : formatFileInsert(reference.path, "file").trim();
     const leading = reference.kind === "agent" ? " " : "";
     let index = content.indexOf(token);
     while (index !== -1) {

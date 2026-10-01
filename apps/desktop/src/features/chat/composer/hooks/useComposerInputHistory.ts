@@ -5,7 +5,7 @@ import {
   rememberComposerInput,
   type ComposerHistoryEntry,
 } from "../../../../lib/composer-input-history";
-import { createFileReference } from "../editor";
+import { restoreComposerReference } from "../editor";
 import { runHistoryStep, type HistoryDirection } from "../input-history";
 import type { ComposerDraftController } from "./useComposerDraft";
 
@@ -75,7 +75,7 @@ export function useComposerInputHistory({
       edited,
       loadHistory: () => loadComposerInputHistory(referenceSessionId),
       createReference: (reference) =>
-        createFileReference(reference.path, reference.name, referenceSessionId, reference),
+        restoreComposerReference(reference, referenceSessionId),
       effects: {
         applyDraft: (text, references, caret) =>
           draft.applyEditorDraft(text, [...references], caret),
