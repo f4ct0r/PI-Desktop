@@ -1,5 +1,5 @@
 import { net, type BrowserWindow, type WebContents } from "electron";
-import { IPC, type AppSettings } from "@pi-desktop/shared";
+import { IPC, type AppSettings, type LiveCallView } from "@pi-desktop/shared";
 import type { VendorOAuth } from "../oauth";
 import type { HostProcess } from "../host-process";
 import type { AgentHostBridge } from "../agent-host-bridge";
@@ -31,6 +31,12 @@ export function createLiveCallService(input: {
   getBackendRouter?: () => BackendRouter | null;
   getRemoteHosts?: () => RemoteHostsBoot | null;
   vendorOAuth: Pick<VendorOAuth, "resolveAuth">;
+  /**
+   * Every published call view, for chrome outside the owner frame — the docked
+   * Live Voice widget window. The owner frame keeps receiving the same view
+   * through `IPC.event.liveVoiceChanged`.
+   */
+  onCallView?: (view: LiveCallView | null) => void;
   microphoneLeases: MicrophoneLeaseRegistry;
   resolveAgentRuntimeLaunch: (
     sessionId: string,
@@ -155,7 +161,10 @@ export function createLiveCallService(input: {
         ownerFrame: frame,
       });
     },
-    sendView: (owner, view) => sendToOwner(input.getMainWindow(), owner, IPC.event.liveVoiceChanged, view),
+    sendView: (owner, view) => {
+      sendToOwner(input.getMainWindow(), owner, IPC.event.liveVoiceChanged, view);
+      input.onCallView?.(view);
+    },
     sendControl: (owner, event) => sendToOwner(input.getMainWindow(), owner, IPC.event.liveVoiceControl, event),
     sendTranscript: (owner, event) => sendToOwner(input.getMainWindow(), owner, IPC.event.liveVoiceTranscript, event),
     ownerAlive: (owner) => liveOwnerFrame(input.getMainWindow(), owner) !== null,

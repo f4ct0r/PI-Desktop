@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import type { LiveCallView, LiveStatus, LiveTranscriptSegment } from "@pi-desktop/shared";
 import { IconClose, IconExternal } from "../../../components/icons";
 import { AnchoredMenu } from "../../../components/settings/AnchoredMenu";
-import { Panel, TooltipButton } from "../../../components/ui";
+import { Button, Panel, TooltipButton } from "../../../components/ui";
 import { useAppStore } from "../../../stores/app-store";
 import { liveVoiceApi } from "./live-voice-api";
 import { formatWorkSessionLabel } from "./live-voice-presentation";
@@ -11,14 +11,15 @@ import { liveWorkDecision, operationAwaitsDecision } from "./live-work-decision"
 import { LiveWorkDecisionNotice } from "./LiveWorkDecisionNotice";
 import { LiveWorkOperations } from "./LiveWorkOperations";
 
-export function LiveVoiceDetails({ t, call, status, transcripts, open, onClose, anchorRef }: {
+export function LiveVoiceDetails({ t, call, status, transcripts, open, onClose, onResumePlayback, anchorRef }: {
   t: TFunction;
   call: LiveCallView;
   status: LiveStatus | null;
   transcripts: LiveTranscriptSegment[];
   open: boolean;
   onClose: () => void;
-  anchorRef: RefObject<HTMLButtonElement | null>;
+  onResumePlayback: () => void;
+  anchorRef: RefObject<HTMLElement | null>;
 }) {
   const activeSessionId = useAppStore((state) => state.activeSessionId);
   const sessions = useAppStore((state) => state.sessions);
@@ -86,6 +87,11 @@ export function LiveVoiceDetails({ t, call, status, transcripts, open, onClose, 
       <Panel className="live-voice-details">
         <div className="live-voice-panel-heading">
           <strong>{t("liveVoice.details")}</strong>
+          {call.playbackBlocked ? (
+            <Button size="sm" variant="secondary" onClick={onResumePlayback}>
+              {t("liveVoice.resumePlayback")}
+            </Button>
+          ) : null}
           <TooltipButton type="button" className="icon-btn icon-btn-square" tooltip={t("common.close")} onClick={onClose}>
             <IconClose size={15} aria-hidden="true" />
           </TooltipButton>

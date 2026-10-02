@@ -2190,7 +2190,7 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     await runtime.dispose();
   });
 
-  it("resets deferred capabilities at the beginning of a new prompt", async () => {
+  it("keeps deferred capabilities sticky at the beginning of a new prompt (#1225)", async () => {
     const runtime = createRuntime();
     const agent = (runtime as any).agent;
     const search = agent.state.tools.find(
@@ -2207,11 +2207,17 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
       true,
     );
 
+    // Sticky activation: the next prompt does not drop what the model still
+    // sees and calls, even when the announcing rows leave the context window.
     (runtime as any).resetDeferredToolsForPrompt();
     expect(agent.state.tools.some((tool: any) => tool.name === "BrowserPreview")).toBe(
-      false,
+      true,
     );
-    expect(getCurrentTools(agent.state.messages)).toEqual(agent.state.tools.map(toToolDeclaration));
+    // Tool deltas append new declarations; catalog order is not semantic.
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+    expect([...getCurrentTools(agent.state.messages)].sort(byName)).toEqual(
+      agent.state.tools.map(toToolDeclaration).sort(byName),
+    );
   });
 });
 
@@ -8738,6 +8744,36 @@ describe("DesktopAgentRuntime deferred tool restore (#225)", () => {
     (runtime as any).resetDeferredToolsForPrompt();
 
     expect(hasTool(runtime, "BrowserPreview")).toBe(true);
+    await runtime.dispose();
+  });
+
+  it("keeps an activated tool sticky across prompts after its activation rows leave the context (#1225)", async () => {
+    // The tool was activated and used earlier in the session, but those rows
+    // have since fallen out of the visible context (compaction, long turns).
+    // The prompt-time restore finds nothing to reactivate, so sticky
+    // activation is what keeps the tool in the schema and prevents the
+    // intermittent "Tool BrowserPreview not found" 0 ms rejection.
+    const runtime = createRuntime({ history: [] });
+    (runtime as any).activeDeferredToolNames.add("BrowserPreview");
+
+    (runtime as any).resetDeferredToolsForPrompt();
+
+    expect(hasTool(runtime, "BrowserPreview")).toBe(true);
+    await runtime.dispose();
+  });
+
+  it("does not resurrect a sticky activation after the catalog prunes the tool", async () => {
+    // rebuildToolCatalog prunes both sets when a tool leaves the catalog
+    // (mode switch, extension reload); the prompt-time restore must not
+    // re-add a name the catalog no longer holds.
+    const runtime = createRuntime({ history: [] });
+    (runtime as any).activeDeferredToolNames.add("BrowserPreview");
+    (runtime as any).deferredToolNames.delete("BrowserPreview");
+    (runtime as any).activeDeferredToolNames.delete("BrowserPreview");
+
+    (runtime as any).resetDeferredToolsForPrompt();
+
+    expect(hasTool(runtime, "BrowserPreview")).toBe(false);
     await runtime.dispose();
   });
 

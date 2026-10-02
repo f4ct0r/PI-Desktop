@@ -8,6 +8,35 @@
 
 ## 1. Goals
 
+### E2E-STORAGE-custom-location-and-maintenance
+
+- **Preconditions:** Dedicated request worktree, current remote-main base, shared
+  compatible host toolchain, built host-core and desktop, isolated temporary data
+  and Chromium profiles. No user's running desktop, provider, or network is used.
+- **Steps:** Through the production Settings page, choose/cancel a destination,
+  confirm/retry migration, and confirm cache/backup cleanup. Seed a real host with
+  sessions, queued attachments, project metadata, credentials and a local installed
+  plugin. Stop it, copy with the production migration service, invoke the real Rust
+  offline relocation process, and reopen the host. Seed default/persistent Chromium
+  localStorage, execute the production cold bootstrap in real Electron, restart with
+  its pointer, clear caches, and then separately remove old backups.
+- **Expected:** Data and browser source paths are visible, confirmation receives
+  focus, duplicate actions are locked, environment overrides disable changes and
+  failures allow recovery. Copy/verification/path-relocation progress is localized
+  and uses a sandboxed nonpersistent window. Host data, credential decryption,
+  installed plugin locations, main localStorage and plugin persistent storage
+  survive migration/restart. Cache cleanup preserves durable state; backup cleanup
+  retains active data and the stable bootstrap pointer. Filesystem regression tests
+  reject unsafe targets, redirecting links, wrong ownership and active-root overlap.
+- **Coverage:** `pnpm test:e2e:storage` runs `e2e-storage-settings.mjs`,
+  `e2e-storage-migration.mjs`, and `e2e-storage-bootstrap.mjs`. The first uses the
+  production renderer/API with only preload mocked; the latter suites run real
+  host/Electron processes and production maintenance. The bootstrap harness
+  intercepts relaunch to inspect its result, then explicitly starts another isolated
+  child; it does not launch the user's desktop. `storage-maintenance.test.mjs`
+  and Rust `data_relocation` tests cover rollback and path/filesystem boundaries.
+
+
 ### E2E-LIVE-VOICE-public-settings-and-reconnect
 
 - **Preconditions:** A built production Renderer and real Electron/Main/Host,
@@ -94,7 +123,10 @@
   4. Open Details, inspect transcript/provider/work state, and dismiss it with
      Close, outside press, and Escape. Keep the call connected; use the bar to
      resume blocked sound, observe a rejected resume, and recover explicitly.
-  5. Navigate between chat, Settings, Plugins, and sessions. End or disable the
+  5. Navigate between chat, Settings, Plugins, and sessions. The call chrome is
+     a docked desktop widget window, so drag it by its own bar, verify the
+     position survives that navigation and is clamped back inside the work area,
+     and verify the main window draws no call bar. End or disable the
      feature with delayed Main termination and renderer cleanup, in either
      completion order. Keep Ending visible and prevent another Start until both
      settle. Exercise unconfirmed release and verify visible blocked recovery.
@@ -258,6 +290,23 @@
 - **Coverage:** Host fork regression, renderer session-fork-running tests,
   session IPC contract tests, and real-model desktop acceptance. A local model
   fixture or mocked component result is not real-model acceptance evidence.
+
+### E2E-CONVERSATION-minimap-jump-leaves-follow
+
+- **Preconditions:** One Desktop conversation long enough that the transcript
+  overflows its viewport, opened at the bottom so follow mode is pinned, with
+  the conversation outline (minimap) visible on the transcript's left edge.
+- **Steps:** Click the outline dash of an earlier turn without scrolling the
+  transcript first.
+- **Expected:** The transcript scrolls to that turn and stays there: the turn
+  lands just below the scroller's top edge and the jump-to-latest control
+  appears, because the jump leaves follow mode before it scrolls. A pinned
+  follow must never re-bottom the view one frame after the click. The outline's
+  earlier-history control keeps its existing reveal behavior.
+- **Status:** Automated in `pnpm test:e2e:transcript-minimap-jump`, which mounts
+  the production `ChatTranscript` in a real Chromium page with a synthetic
+  session, clicks an outline dash while follow is pinned, and asserts the
+  scroller's distance from the bottom once the exchange has settled.
 
 ### E2E-POWER-keep-awake-setting
 
@@ -499,7 +548,7 @@ levels does not waive the relevant E2E gate.
 
 | Requirement | Detail |
 |---|---|
-| Platform | macOS arm64 and Intel x64, Windows x64, and Linux x64 release targets (D126/D285) |
+| Platform | macOS arm64 and Intel x64, Windows x64, and Linux x64 and arm64 release targets (D126/D285, D638 / ADR 0318) |
 | Profile | Clean `~/.pi-desktop` profile (no prior config) |
 | Fixtures | Sample project directory (`examples/fixtures/sample-project/`) |
 | Sample plugin | `examples/plugins/hello` loaded from local path |
@@ -627,7 +676,11 @@ identify the platform validation still needed.
   restart. 5) Allow the persistence outbox to flush.
 - **Expected**: Active shell processes never exceed the configured global and
   per-session limits. Excess work returns `HOST_OVERLOADED` or waits in the
-  bounded queue. Only one restart loop runs; stale-generation calls fail fast
+  bounded queue. Queued requests do not reserve execution capacity: with four
+  running Bash calls and twelve queued Bash calls, another session can still
+  Read and Write. A saturated session cannot reserve spare class capacity, and
+  admission-future cancellation/timeout restores queue and execution counters.
+  Only one restart loop runs; stale-generation calls fail fast
   as `HOST_UNAVAILABLE`; no repeated `ERR_STREAM_DESTROYED` persistence storm
   is emitted. Temporary OS thread pressure during the same burst does not
   terminate host-core through its stdio control path; the host remains on one
@@ -638,7 +691,10 @@ identify the platform validation still needed.
   `03-runtime/09-logging-and-observability.md`, ADR 0051
 - **Acceptance**: A (runtime health), C (tool execution and recovery)
 - **Milestone**: M5
-- **Status**: Documented; automation pending
+- **Status**: Cross-session admission is automated by
+  `node scripts/e2e-tool-admission.mjs` against an isolated real host. Class,
+  session, global, mutation, queue bounds, fairness, cancellation, and timeout
+  are unit-covered by `tool_budget/tests.rs`; restart coverage remains pending.
 
 ### Release & Packaging
 
@@ -646,7 +702,7 @@ identify the platform validation still needed.
 
 - **Preconditions**: A `vX.Y.Z` tag matches `apps/desktop/package.json`; the
   Linux x64 release runner can complete `dist:linux` and has a system Electron
-  available for repackaging validation.
+  available for repackaging validation. The arm64 lane is E2E-192a.
 - **Steps**: 1) Run the tag release workflow. 2) Inspect the published GitHub
   Release assets. 3) Confirm the versioned
   `PI-Desktop-X.Y.Z-linux-x64.asar` asset is present. 4) Place that archive in
@@ -661,6 +717,31 @@ identify the platform validation still needed.
 - **Milestone**: M6+
 - **Status**: Documented; artifact export is unit-covered, native system-Electron
   repackaging remains runner validation
+
+#### E2E-192a: Linux arm64 release lane publishes native arm64 packages
+
+- **Preconditions**: A `vX.Y.Z` tag matches `apps/desktop/package.json`; GitHub's
+  arm64 `ubuntu-22.04-arm` runner is available to the repository.
+- **Steps**: 1) Run the tag release workflow. 2) Confirm the arm64 lane ran on
+  an `aarch64` runner and that the packaged
+  `target/release/pi-desktop-host-core` is an AArch64 binary. 3) Inspect the
+  published Release assets for `PI-Desktop-X.Y.Z-linux-arm64.AppImage`,
+  `pi-desktop_X.Y.Z_arm64.deb`, `pi-desktop-X.Y.Z-aarch64.rpm`,
+  `PI-Desktop-X.Y.Z-linux-arm64.asar`, and
+  `pi-host-X.Y.Z-linux-arm64.tar.gz` with its `.sha256`. 4) Confirm
+  `latest-linux.yml` still lists the x64 AppImage while
+  `latest-linux-arm64.yml` lists the arm64 one. 5) Install the arm64 AppImage,
+  deb, or rpm on an arm64 Linux machine and launch it.
+- **Expected**: Both feeds describe exactly one architecture-labelled AppImage
+  each, the arm64 packages carry an arm64 host-core, the app starts on arm64
+  Linux, and merging the lanes never replaces the x64 feed with the arm64 one.
+- **Specs linked**: `06-delivery/06-release-runbook.md`, `01-product/01-product-scope.md`
+- **Acceptance**: Quality (release artifact and packaging compatibility)
+- **Milestone**: M6+
+- **Status**: The matrix, feed naming, artifact naming, and the ASAR export are
+  unit/source-contract covered (`ci-workflow.test.mjs`, `release-asar.test.mjs`);
+  native arm64 installation remains runner validation. Microphone capture stays
+  Raspberry Pi only on arm64 Linux (D638 / ADR 0318).
 
 #### E2E-200: Linux RPM preserves the Wayland desktop identity
 
@@ -1211,6 +1292,11 @@ identify the platform validation still needed.
   during the edit debounce after a URL becomes valid. Automatic discovery on
   credential edits is unchanged. The same control is present for both
   credential kinds because both dialogs render the shared picker.
+- **Revocation regression**: Configure two served models, revoke one upstream,
+  add another, then Fetch list. The left service pane shows the current served
+  pair, including when the revoked ID has a published catalog record. The right
+  chosen pane retains both saved bindings and their overrides; refresh does not
+  delete configuration. A manual/offline fallback still exposes configured IDs.
 - **Specs linked**: `03-runtime/13-model-catalog-and-selection.md`,
   `04-ux/06-settings-ia.md`, `04-ux/08-component-spec.md`
 - **Acceptance**: B (multi-model provider configuration)
@@ -1472,11 +1558,13 @@ identify the platform validation still needed.
 
 - **Preconditions**: A session can produce both a deliberately delayed first
   token and a streaming response.
-- **Steps**: 1) Send ordinary text and stop before assistant text, thinking, or
-  a tool row begins. 2) Confirm the user row is undone and the text returns to
-  the composer. 3) Send again, wait for partial output, then stop during the
-  stream. 4) Observe the transcript and composer.
-- **Expected**: The unanswered send is undone and its draft restored. The
+- **Steps**: 1) Send ordinary text and click Stop immediately, including while
+  the prompt is still being admitted. 2) Confirm the user row is undone and
+  the text returns to the composer after that first Stop. 3) Send again, wait
+  for partial output, then stop during the stream. 4) Observe the transcript
+  and composer.
+- **Expected**: The first Stop is honored even if prompt admission is still in
+  progress; the unanswered send is undone and its draft restored. The
   streaming send stops with its partial response preserved and no draft
   restoration or duplicate user turn. The session remains usable.
 - **Specs linked**: `03-runtime/02-agent-runtime.md`
@@ -3134,12 +3222,12 @@ identify the platform validation still needed.
 
 #### E2E-024J: Plugin theme applies and falls back when withdrawn
 
-- **Preconditions**: A marketplace/package-installable `examples/plugins/hello` variant (`demo.hello`) whose `midnight` theme CSS references a declared package-relative image at `art/preview.png`; a plugin with CSS using `@import` or remote `url()` for rejection plus a comment-only variant; an asset theme with `windowAppearance` variants with and without `ui.window.appearance`.
+- **Preconditions**: A marketplace/package-installable `examples/plugins/hello` variant (`demo.hello`) whose `midnight` theme CSS references a declared package-relative image at `art/preview.png`; a plugin with CSS using `@import` or remote `url()` for rejection plus a comment-only variant; an asset theme with `windowAppearance` variants with and without `ui.window.appearance`, including `cornerRadius: 0` and an invalid value above 24.
 - **Steps**: 1) Install the packaged Hello variant from Marketplace or its `.piplug` package and select `Hello Midnight` in Settings → General → Theme. 2) Restart the app. 3) Disable the providing plugin. 4) Re-enable it, then uninstall it. 5) Load the plugin with unsafe CSS. 6) Load the comment-only variant. 7) Select the asset variant's theme on Windows/Linux and on macOS, verify the package-relative image renders through `plugin-asset:` in the shell and the plugin's panel, and load a sheet with an undeclared package-relative `url()` to verify it is refused. 8) Deselect its theme after removing `ui.window.appearance`.
-- **Expected**: The packaged plugin installs successfully with its relative image resolved inside the plugin root; its theme appears in the picker alongside the built-ins and applies immediately, with the image served through `plugin-asset:`; the choice survives restart as `plugin:demo.hello:midnight`; disabling or uninstalling the provider falls back to `system` instead of an unstyled shell; unsafe CSS is refused at load with the reason logged and no `<style>` element injected; the comment-only sheet loads and contributes its theme, because the sanitizer only inspects CSS the browser would apply; the declared asset paints through `plugin-asset:` in the shell and in the plugin's own panel, an undeclared reference is refused with the reason logged, the declared background colours the native window on Windows/Linux and is never sent on macOS, and deselecting the theme or dropping the grant returns the window to the host background; the whole shell follows the theme, including the work-panel column, its header, and the browser/file viewer strips, all of which read `--ds-bg-dock` / `--ds-bg-dock-raised` rather than a literal.
+- **Expected**: The packaged plugin installs successfully with its relative image resolved inside the plugin root; its theme appears in the picker alongside the built-ins and applies immediately, with the image served through `plugin-asset:`; the choice survives restart as `plugin:demo.hello:midnight`; disabling or uninstalling the provider falls back to `system` instead of an unstyled shell; unsafe CSS is refused at load with the reason logged and no `<style>` element injected; the comment-only sheet loads and contributes its theme, because the sanitizer only inspects CSS the browser would apply; the declared asset paints through `plugin-asset:` in the shell and in the plugin's own panel, an undeclared reference is refused with the reason logged, the declared background colours the native window on Windows/Linux and is never sent on macOS, and `cornerRadius: 0` makes only the Windows main window rectangular while the authorized theme is selected. Deselecting the theme or dropping the grant restores the host background and 4 DIP Windows corners; a radius above 24 rejects without changing the window. The whole shell follows the theme, including the work-panel column, its header, and the browser/file viewer strips, all of which read `--ds-bg-dock` / `--ds-bg-dock-raised` rather than a literal.
 - **Specs linked**: `07-plugins/02-plugin-manifest-schema.md`, `07-plugins/04-plugin-security.md` §3.1, `04-ux/07-ui-design-system.md`, D175
 - **Acceptance**: G (theme contribution) + Security
-- **Status**: Unit-covered (`plugin-themes.test.mjs`, `theme-css` SDK tests, host-core package-relative asset/install tests); visual scenario Draft
+- **Status**: Unit-covered (`plugin-themes.test.mjs`, `theme-css` SDK tests, host-core package-relative asset/install tests). `test:e2e:window-controls` selects an authorized test plugin theme with `cornerRadius: 0` and returns to a built-in theme, verifying the native shape follows both choices. The broader asset visual scenario remains Draft.
 
 #### E2E-PLUGIN-runtime-theme-apis
 
@@ -3436,7 +3524,7 @@ identify the platform validation still needed.
 
 #### E2E-195: Linux glibc below 2.35 names supported distros
 
-- **Preconditions**: Linux x64 packaged app; the machine glibc is older than
+- **Preconditions**: Linux x64 or arm64 packaged app; the machine glibc is older than
   2.35 (for example Ubuntu 20.04 / Debian 11 / Fedora 35), or a test doubles
   `process.report` to `2.31`.
 - **Steps**: 1) Launch the AppImage, deb, or rpm. 2) Observe the main window and
@@ -3908,7 +3996,7 @@ identify the platform validation still needed.
   and native bounds while opening, repeating the same open action, resizing the
   panel, collapsing, reopening, and closing the final resource. Repeat collapse
   on Windows while watching the entire frameless window. 9) With the panel open,
-  resize the application from each native edge and confirm only the application
+  resize the application from each edge and confirm only the application
   bounds change; the panel remains at its renderer-committed width. Resize from
   the left edge and repeat after toggling the sidebar. 10) Open, resize, and
   collapse on a small work area, then repeat while maximized and fullscreen. 11)
@@ -9177,9 +9265,8 @@ The `US-UI-*` visual scenarios (§UI shell visual scenarios) trace to the
 Codex parity decisions in [decisions-log §D](../08-meta/decisions-log.md)
 rather than the A–H criteria; their gold source is the capture suite.
 
-The release artifact paths are covered by E2E-192, E2E-196a, E2E-196b, E2E-196c,
-and E2E-200
-(Quality, M6+).
+The release artifact paths are covered by E2E-192, E2E-192a, E2E-196a,
+E2E-196b, E2E-196c, and E2E-200 (Quality, M6+).
 
 ---
 
@@ -11542,10 +11629,11 @@ This test plan spec is accepted when:
   adoption, previous-display replan regression, work-area clamping); the
   two-display desktop journey and the relaunch/hotplug legs are pending
 
-#### E2E-167: Native edge resize stays smooth and persists the settled bounds
+#### E2E-167: Window edge resize stays smooth and persists the settled bounds
 
 - **Preconditions**: PI-Desktop is open in a normal, non-maximized window on
-  macOS, Windows, or Linux. Run the case with the work panel closed and once
+  macOS, Windows, or Linux. On Windows, the left, bottom, and right rim must
+  have no visible native border. Run the case with the work panel closed and once
   with it open at a committed width.
 - **Steps**:
   1. Drag each reachable window edge and one corner slowly, including a brief
@@ -11557,21 +11645,38 @@ This test plan spec is accepted when:
      native bounds stay fixed. Repeat below the panel minimum and above its
      maximum, then verify the target follows the live budget (`client width - 360px - expanded sidebar`) instead of a fixed cap.
   4. Close and relaunch the app after the resize settles.
+  5. On Windows, start an edge gesture, press Escape, and verify original bounds
+     return. Release the pointer outside the original window bounds, then
+     maximize and enter fullscreen; native hit regions must not block
+     window controls or content in those states.
+  6. On Windows, inspect the default 4 DIP corner cutouts before and after
+     resizing. Apply an authorized theme with `cornerRadius: 0`, then return to
+     a built-in theme. Reject an out-of-range radius without changing the shape.
 - **Expected**: Native edge and corner hit regions remain available in frameless
   chrome, the minimum size remains 800×560 (capped to the display
   work area), and the recovery watchdog does not
   compete with a slow resize stream. The renderer-owned divider updates the
   bounded panel target without changing native bounds; the last settled window
-  bounds and the committed panel width reopen after relaunch. No temporary
+  bounds and the committed panel width reopen after relaunch. Windows uses
+  Electron's frameless native hit regions without the thick-frame rim; no left, bottom,
+  or right native rim is visible. No temporary
   work-panel reservation width is persisted or restored.
+  The four normal-window corners have no painted or interactive pixels outside
+  the active radius; the default is 4 DIP, an authorized theme may choose 0..24
+  DIP, and maximized/fullscreen windows are rectangular.
 - **Specs linked**: `03-runtime/01-ipc-protocol.md`,
   `04-ux/01-ui-ia.md`, `04-ux/07-ui-design-system.md`,
   `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`,
   ADR 0029 / ADR 0151
 - **Acceptance**: A (app shell), F (persistence), Quality
 - **Milestone**: M6+
-- **Status**: Unit/source-contract covered; native desktop edge/corner journey
-  remains pending
+- **Status**: `test:e2e:window-controls` covers corner cutouts, theme radius
+  changes, fullscreen, maximize, and controls in an isolated profile.
+  `test:e2e:window-resize-native` adds physical Windows left/right/bottom/corner
+  drags and the 800×560 minimum; run it on a dedicated interactive desktop,
+  since another app can take foreground or pointer input during the gesture.
+  Relaunch persistence remains for native qualification; macOS/Linux native
+  edge behavior is unchanged.
 
 #### E2E-168: Expanded sidebar width follows an anchored resize gesture
 

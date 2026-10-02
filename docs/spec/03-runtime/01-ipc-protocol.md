@@ -1931,7 +1931,17 @@ platform, and minimize-to-tray needs it whichever close behavior is stored.
 Maximize/unmaximize changes also emit
 `window/event/maximized`. Unknown actions fail. These Electron-only channels
 do not cross into host-core and do not change the host RPC protocol version.
-The preload intentionally exposes no arbitrary BrowserWindow resize channel.
+The preload exposes no arbitrary BrowserWindow bounds or resize channel.
+Windows retains Electron's native frameless edge/corner hit testing with
+`thickFrame: false`; the renderer does not submit window geometry.
+The Windows borderless fullscreen fallback is tracked in Main because Electron
+reports `isFullScreen() === false` while it uses display bounds for that mode;
+the window-control state and fullscreen event use the tracked value.
+`window/setBackgroundColor` remains Electron-local and main-renderer-only. Its
+optional `cornerRadius` is an integer from 0 to 24 DIP; omission restores the
+Windows main-window default of 4. Main applies the native shape on theme
+selection and resize, and clears the corner cutouts during maximize/fullscreen.
+Malformed values fail with `INVALID_ARGUMENT` before changing the background.
 Plugin panel chrome uses a separate Electron-local
 `pi-plugin-panel-window-control` channel with the same four semantic actions,
 but the handler resolves the target strictly from the sender's live panel
@@ -2386,12 +2396,14 @@ watching.
 
 ## 16. Live Voice API
 
-Live Voice is a main-window-only, app-owned call path described in
-[live-voice.md](live-voice.md). Its DTOs are defined in
+Live Voice is an app-owned call path described in [live-voice.md](live-voice.md)
+whose ownership is bound to the main window. Its DTOs are defined in
 `packages/shared/src/types/live-voice.ts`; the preload exposes only the
 allowlisted channels below. Main derives the owner from the invoking trusted
 frame and sends call events only to that frame. No payload can supply an owner
-identity or credentials.
+identity or credentials. The docked widget window draws the call chrome without
+owning the call, so its three channels are validated separately and never enter
+owner derivation.
 
 | IPC channel | Direction | contract |
 |---|---|---|
@@ -2409,6 +2421,11 @@ identity or credentials.
 | `pi-desktop/voice/live/event/port` | Main → Renderer | transfers exactly one call-scoped `MessagePort` with its call ID and one-time nonce |
 | `pi-desktop/voice/live/event/control` | Main → Renderer | provider control request, limited to the explicit v1 control vocabulary |
 | `pi-desktop/voice/live/event/transcript` | Main → Renderer | transient bounded transcript event for the current call |
+| `pi-desktop/voice/live/widget/visibility` | Widget → Main | the docked widget's own presentation decision and the content box it needs; Main shows or hides that window accordingly |
+| `pi-desktop/voice/live/widget/action` | Widget → Main | a call action pressed in the docked widget; Main validates the sender and forwards it to the owner frame, which runs it |
+| `pi-desktop/voice/live/widget/ownerState` | Main window → Main | what only the owner frame knows: its own failure code (for example a refused mute) and whether the bound work session waits on a decision; neither is in the call view |
+| `pi-desktop/voice/live/event/widgetState` | Main → Widget | the authoritative call view plus the owner's own failure code and waiting-decision flag, pushed to the docked widget window |
+| `pi-desktop/voice/live/event/widgetAction` | Main → Main window | the forwarded widget action the owner frame has to run |
 
 The `MessagePort` is provisioned only after successful owner validation, then
 relayed by preload to the renderer window. The owner echoes the per-call nonce
@@ -2418,3 +2435,11 @@ epochs, release acknowledgements, playback cursors and protocol readiness
 signals. It is not a generic IPC tunnel: it carries no provider
 credentials, arbitrary commands, workspace paths, Agent messages or durable
 transcripts. A port is closed on call end or owner loss.
+
+The docked widget window is not a call owner and can never become one: it is
+refused on every owner-validated channel with `PERMISSION_DENIED`, exactly like
+any other renderer. Main answers its two channels only when the sender is that
+window, and the owner's own failure code arrives through the main window, which
+is the frame that ran the action. A widget action never changes call state by
+itself: it is forwarded to the owner frame, and the resulting state reaches the
+widget through the same authoritative view the owner receives.

@@ -4,10 +4,14 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-// The bar owns the call chrome; the failure text and its code are asserted
-// through the source, because the toast itself is the store's surface.
+// The widget window draws the bar; the owner frame (the main window) runs the
+// actions and owns the toast surface, so both sources are read here.
 const callBarSource = readFileSync(
   new URL("../src/features/voice/live/LiveVoiceCallBar.tsx", import.meta.url),
+  "utf8",
+);
+const hostSource = readFileSync(
+  new URL("../src/features/voice/live/LiveVoiceStatusHost.tsx", import.meta.url),
   "utf8",
 );
 
@@ -55,7 +59,7 @@ test("Live Voice separates idle entry and compact call presentation", async (t) 
   const { LiveVoiceControls } = await server.ssrLoadModule("/src/features/voice/live/LiveVoiceControls.tsx");
   const { LiveVoiceCallBar } = await server.ssrLoadModule("/src/features/voice/live/LiveVoiceCallBar.tsx");
   const { getLiveCallController } = await server.ssrLoadModule("/src/features/voice/live/live-call-controller.ts");
-  const { liveVoiceMode, liveVoiceIssue, liveReadinessMessage, hasUnconfirmedMediaRelease } = await server.ssrLoadModule("/src/features/voice/live/live-voice-presentation.ts");
+  const { liveVoiceMode, liveVoiceIssue, liveReadinessMessage, hasUnconfirmedMediaRelease, liveVoiceWidgetSnapshot, liveVoiceWidgetVisible } = await server.ssrLoadModule("/src/features/voice/live/live-voice-presentation.ts");
   const translate = (key) => key;
   const controller = getLiveCallController();
   const renderEntry = () => renderToStaticMarkup(React.createElement(LiveVoiceControls, { t: translate, workSessionId: "work-a" }));
@@ -133,22 +137,19 @@ test("Live Voice separates idle entry and compact call presentation", async (t) 
     assert.equal(liveVoiceIssue({ ...snapshot, call: { ...call, playbackBlocked: false, notice: { code: "LIVE_PLAYBACK_BLOCKED", retriable: true } } }), null);
     assert.equal(liveVoiceIssue({ ...snapshot, call: { ...call, notice: { code: "LIVE_EXECUTION_NOT_CONNECTED", retriable: false } } }).message, "liveVoice.workNotConnected");
   });
-  await t.test("a stopped call names its real cause and carries its code to the toast", () => {
+  await t.test("a stopped call names its real cause and carries its code in the bar", () => {
     const failed = { ...snapshot, call: { ...call, phase: "failed", error: { code: "LIVE_NETWORK_ERROR", retriable: true } } };
     assert.equal(liveVoiceIssue(failed).message, "errors.NETWORK_ERROR");
-    // A transport failure is a one-shot result, so the bar reports it through
-    // the global toast together with the verbatim, allow-listed code.
+    // The widget window draws the only call chrome left, so a cause that used to
+    // travel through the main window's toast is named in place, with its
+    // verbatim allow-listed code next to it.
     const html = renderBar(failed);
-    assert.doesNotMatch(html, /errors\.NETWORK_ERROR/);
-    assert.doesNotMatch(html, /role="alert"/);
-    assert.match(
-      callBarSource,
-      /showToast\(`\$\{t\(issue\.message\)\} \(\$\{issue\.code\}\)`, \{ variant: "error" \}\)/,
-    );
-    // A retry that fails the same way is a new failure: starting an action drops
-    // the mark, because the call is preserved and the key alone cannot say so.
-    assert.match(callBarSource, /actionPending !== null && previousActionPending\.current === null/);
-    assert.match(callBarSource, /if \(startedAttempt\) reportedIssue\.current = null;/);
+    assert.match(html, /role="status"/);
+    assert.match(html, /errors\.NETWORK_ERROR/);
+    assert.match(html, /LIVE_NETWORK_ERROR/);
+    // A failure only the owner frame can see — a refused action — reaches the
+    // widget as a reported code, because the call view never carries it.
+    assert.match(hostSource, /liveVoiceApi\.reportWidgetOwnerState\(\{ callId, errorCode: issue\?\.code \?\? null, decisionWaiting \}\)/);
     // account failures read as account failures, not as generic configuration advice
     const auth = liveVoiceIssue({ ...snapshot, call: { ...call, phase: "failed", error: { code: "LIVE_AUTH_REQUIRED", retriable: false } } });
     assert.equal(auth.message, "liveVoice.authRequired");
@@ -156,5 +157,25 @@ test("Live Voice separates idle entry and compact call presentation", async (t) 
     const unknown = liveVoiceIssue({ ...snapshot, call: { ...call, phase: "failed", error: { code: "LIVE_SOMETHING_NEW", retriable: false } } });
     assert.equal(unknown.message, "liveVoice.errorGeneric");
     assert.equal(unknown.code, "LIVE_SOMETHING_NEW");
+  });
+  await t.test("the docked widget shows what main pushed and hides the rest", () => {
+    // A call in flight is on screen from the view alone.
+    assert.equal(liveVoiceMode(liveVoiceWidgetSnapshot({ ...call, phase: "connected" })), "connected");
+    assert.equal(liveVoiceWidgetVisible(liveVoiceWidgetSnapshot({ ...call, phase: "connected" }), null), true);
+    // An ending call keeps saying Ending until the renderer release settles: the
+    // owner's local stopping flag never crosses to the widget.
+    assert.equal(liveVoiceMode(liveVoiceWidgetSnapshot({ ...call, phase: "closing" })), "stopping");
+    assert.equal(liveVoiceMode(liveVoiceWidgetSnapshot({ ...call, phase: "ended", mediaRelease: "pending" })), "stopping");
+    assert.equal(liveVoiceMode(liveVoiceWidgetSnapshot({ ...call, phase: "ended", mediaRelease: "confirmed" })), "idle");
+    assert.equal(liveVoiceWidgetVisible(liveVoiceWidgetSnapshot(null), null), false, "no call is nothing to show");
+    // A failure the owner frame reported — never present in the call view — is
+    // named until the user dismisses it.
+    const failed = liveVoiceWidgetSnapshot({ ...call, phase: "failed" }, "LIVE_PLAYBACK_FAILED");
+    assert.equal(liveVoiceIssue(failed).code, "LIVE_PLAYBACK_FAILED");
+    assert.equal(liveVoiceWidgetVisible(failed, null), true);
+    assert.equal(liveVoiceWidgetVisible(failed, liveVoiceIssue(failed).key), false);
+    // A quarantined microphone cannot be dismissed into a reusable call slot.
+    const quarantined = liveVoiceWidgetSnapshot({ ...call, phase: "failed", mediaRelease: "unconfirmed" });
+    assert.equal(liveVoiceWidgetVisible(quarantined, liveVoiceIssue(quarantined).key), true);
   });
 });

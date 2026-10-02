@@ -1,4 +1,4 @@
-# ADR 0316: User-authored `@agent` delegation
+# ADR 0320: User-authored `@agent` delegation
 
 - Status: Accepted for implementation
 - Date: 2026-09-26

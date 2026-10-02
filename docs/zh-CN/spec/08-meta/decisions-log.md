@@ -34,6 +34,8 @@
 | D634 | 移除 macOS 首次启动辅助文件 | **修订 D457 / ADR 0296 及 ADR 0232 / ADR 0204 中的 macOS 分发约定：macOS DMG 与 ZIP 均不再附带 `PI-Desktop-macOS-open.command`、`PI-Desktop-macOS-opening-help.txt`，或其他捆绑的 quarantine 清理助手/打开说明。ZIP 根目录只包含 `PI-Desktop.app`；DMG 仍为双图标安装。该规定适用于签名发布和本地或可选的未签名调试构建。见 ADR 0309 与 E2E-196b。** | 已签名发布通道不再需要未签名首次启动兜底；随调试包附带此类文件可能误导用户绕过 Gatekeeper。 |
 | D635 | 按工作区上限裁剪的 800×560 窗口最小尺寸 | **取代 D156 / D447 中的 1040×700 窗口最小尺寸（及 ADR 0029 / ADR 0238 的对应条款）和 `window/setWorkPanelChatWidth` 的 `1040..10000` 范围（ADR 0146）：Electron 强制 800×560 最小尺寸，并由 `clampMinimumSizeToWorkArea` 按维度裁剪到当前显示器工作区。聊天宽度 IPC 与渲染层接受 `800..10000`。窄窗口下沿用现有 `workPanelLayout` 预算：限制停靠面板宽度以保证 MainChat 的 450px 下限，并优先收起侧边栏。见 US-UI-19 与 E2E-167。** | Windows 150% 缩放下工作区约为 1280×672 DIP，固定最小尺寸可能超过屏幕，导致窗口无法适配。 |
 | D636 | 本地权限确认没有自动截止时间 | **修订 D005 / ADR 0011：需要权限的 `tools.execute` 请求会在 host-core、渲染层和传输中保持待处理，直到用户选择允许一次、允许会话或拒绝，或请求被取消/进程关闭。移除 120 秒倒计时以及本地权限契约中的超时字段。工具自身执行预算以及独立的 RACP/Plan 审批时限保持不变。见 ADR 0310、issue #1214 与 E2E-017。** | 用户可能在其他工作期间错过可见的权限请求；保持取消和执行预算即可保留控制与资源安全，又不会把“未注意”变成一个决定。 |
+| D637 | 移除 Windows 无边框窗口的缩放边缘 | **关闭 Windows 主窗口的厚边框，同时保留 Electron 43.6 原生无边框窗口的边缘和角落缩放。默认应用 4 DIP 原生圆角；获得授权的插件主题可选择 0 至 24 DIP 的整数半径。保留 D635 的最小尺寸约定和现有工作面板缩放归属。见 ADR 0317 与 E2E-167。** | 厚边框绘制了主题无法移除的左、下、右边缘。原生命中检测和窗口形状在不新增渲染层缩放 IPC 的情况下保留缩放能力及透明外角。 |
+| D638 | 发布原生 Linux arm64 工件 | **修订 D126 / D285 / D603 / ADR 0022：标签发布构建并发布原生 Linux arm64 的 AppImage、deb 和 rpm 包，它们在 GitHub 原生 `ubuntu-22.04-arm` 运行器上构建并携带 arm64 `pi-desktop-host-core`。静态 Linux 目标去掉固定的 `arch`，改用工作流的 `--x64` / `--arm64` 参数；`linux.artifactName` 变为 `PI-Desktop-<version>-linux-<arch>.AppImage`；每条 Linux 通道校验按架构命名的更新源（x64 为 `latest-linux.yml`，arm64 为 `latest-linux-arm64.yml`）；ASAR 导出读取 `linux-unpacked` 或 `linux-arm64-unpacked` 并发布 `PI-Desktop-<version>-linux-<arch>.asar`。`pi-host-bundle` 构建两个 Linux 架构，`PUBLISHED_TARGETS` 增加 `linux-arm64`。更新器归属、签名和交付模式不变。见 ADR 0318、issue #1281 与 E2E-192a。** | arm64 Linux 设备无法安装或运行已发布的 x64 工件，而交叉构建或模拟的通道会随包发布架构不匹配的 Rust sidecar。 |
 | D450 | 签名的 macOS GitHub Release | **修订 D078 / ADR 0022：GitHub tag 发布使用身份 `Developer ID Application: XingYu Liu (DUV63RKYTW)` / 团队 `DUV63RKYTW`，通过 Actions 密钥（`CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`）对 macOS DMG/ZIP 做 Developer ID 签名、`notarytool` 公证、装订和 Gatekeeper 校验；缺少密钥则失败。无证书的本地未签名打包仍可用。`workflow_dispatch` 仅可把 `sign_macos: false` 用于未签名调试产物。打包的 macOS 走应用内 `electron-updater`（ZIP + 合并后的 `latest-mac.yml`）；Linux deb/rpm 与 Windows 便携版 ZIP 仍为通知并打开发布页。禁止 afterPack/afterSign adhoc 签名（ADR 0278）。** | 正式 DMG 应无需 Gatekeeper 警告即可打开，已签名 macOS 安装可下载并重启到新 tag。见 ADR 0289、E2E-196c、E2E-067A。 |
 
 ## B. 辅助实现默认值
@@ -1183,7 +1185,7 @@ D193 和 D194。
 | D189 | Plan 检查点工件、批准和执行纪元 | **相同的 pi Agent 使用 `Agent | Plan`, with Agent default. Plan calls `SubmitPlan(标题, markdown, 问题)` as the only tool in its assistant batch. Rust host-core writes the submitted Markdown bytes unchanged to a new immutable unique file under `<workspaceRoot>/.pi/plan/*.md`; it stores the relative artifact path, SHA-256, and byte size together with structured title/question fields in the existing `plan_approvals` row. No title/question wrapper is added and no prior artifact is replaced. The approval surface displays title, question, an artifact opener, absolute expiry, and status, and offers only Approve or Reject. Approve requires an explicit `ask`, `accept-edits`, or `auto` permission mode, with Ask selected by default; Reject carries no mode. The approval expires at one absolute 30-minute deadline and uses `PLAN_APPROVAL_TIMEOUT`. The same `plan_approvals` row carries `execution_id` and `execution_state` through `queued → 运行 → 已完成 | 中断了`. A startup transaction marks prior pending approvals and queued/running execution states interrupted before serving RPC; no work is replayed. Pending interruption/rejection/expiry leaves the session Plan; an already-approved queued/running interruption leaves the session Agent. One active turn, idle-only configuration, and one pending approval/queued-or-running execution per session are enforced. Scheduled Plan is rejected before provider, artifact, or queue work with `PLAN_REQUIRES_INTERACTIVE_SESSION`。协议 v9 和存储模式 v10 携带的合约没有序列化的 process-epoch 字段。** | 不可变的主机工件保留提交的检查点，同时一个 approval/execution 行和启动进程栅栏可防止重新启动重播，而不会丢失已批准的 Agent 状态 |
 | D190 | 可选择的命令 shell 目录和执行标识 | **主机核心公开稳定的平台感知目录 ID：`windows-powershell`、`cmd`、`git-bash` 和 `bash`；平台目录仅包含该平台支持的 ID。 `defaultCommandShell` 保留在主机设置中，并且设置写入拒绝不可用或错误的平台 ID。如果持久选择稍后变得不可用，则有效 shell 会有意回退到第一个可用的平台 shell。 `Bash` 工具和 `tools.execute` 协议名称保持不变；每个回合都会固定有效的 shell ID 和方言，并且主机在使用 `COMMAND_SHELL_CHANGED` 生成之前拒绝过时的 ID/dialect。 Shell 标识是目录选择，而不是可执行路径哈希。 Bash 分别流式传输 stdout 和 stderr，使用强制的 60 秒默认超时和 1-300 秒覆盖，并且 cancellation/timeout 关闭完整的进程树。** | 用户可以选择命令语言，而无需增加协议工具，而平台验证、显式回退和转固定目录身份可保持执行的可预测性 |
 | D604 | 信任用户自己填写的网络端点 | **对用户填写的 URL 修订 ADR 0243 / 0245 / 0247；沿用 ADR 0142 / 0257 / 0300。用户自己在设置里填写的 URL——市场源、git 远端、MCP OAuth 端点、生成图片 URL——改按"用户端点"策略判定：回环、RFC1918、CGNAT、link-local、ULA、site-local 与 `.local` 都可达，明文 `http` 也可用。这一切由**一个**开关决定：`networkPolicy.mode`（`relaxed` / `strict`），**默认 `relaxed`**，并取代此前按界面分散的确认（明文开关、WebDAV 的 `allowInsecureHttp`、`networkProxy.allowFakeIp`），旧的 `allowInsecureUserEndpoints: false` 迁移为 `strict`；首次明文访问会弹一次告知（`insecureNoticeAcknowledged`）。第三方内容在任何模式下仍只允许公网并把校验过的地址固定到连接：registry 记录、目录正文、目录内部的文档 URL、以及每一次重定向目标。云元数据、`unspecified`、multicast、reserved、documentation 在任何输入上一律拒绝。默认代理绕过列表增加 `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16`。不改主机协议、不改存储 schema：`networkPolicy` 只是既有 app settings 里的一个字段，写入时校验。** | 拒绝用户自己填写的局域网地址并没有消除那次请求——它只是把同样的工作搬到应用旁边的 shell 或浏览器里，因此这条边界牺牲了功能，却没有阻止用户已经做出的决定。SSRF 风险在第三方内容那一侧，所以边界的那一半保持不变。见 ADR 0304。 |
-| D637 | 旧版 HTTP+SSE MCP 传输 | **凡校验 `transport` 之处新增 `sse`，与 `stdio`、`http` 并列，覆盖 Plugin SDK 贡献项、用户 MCP 服务器记录与市场目录条目；`sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同（ADR 0142）。客户端打开长连接的 `GET` 事件流，把每条消息发往服务端公布的 `endpoint` 事件地址，并从这条已打开的流上读取应答；缺少 endpoint 会在连接预算内让握手失败，流断开则结束会话。公布的 endpoint 必须与所配置 URL 同源，必须通过同一套 `assertUrlAllowed` 策略，且不得跟随重定向，因此服务端无法把会话及其声明的凭据迁移到用户未配置的主机。传输契约与唯一的增量事件流解析器移至 `apps/desktop/electron/main/mcp-transport.ts`。导入时声明 `"type": "sse"` 的条目导入为 `sse`，不再并入 `http`。** | 相当一部分已部署的 MCP 服务器只提供旧版 HTTP+SSE 传输，而 streamable HTTP 客户端无法触达它们——它为每条消息发起 `POST` 并从响应中读取应答，而这类服务器只回 `202`，并把应答投递到一条必须事先打开的流上，于是调用会一直挂到预算耗尽。导入此前还会把 `sse` 并入 `http`，把一份可用配置变成一个在导入阶段不报错的、无法连接的服务器。公布的 endpoint 是远端服务器唯一可能把本会话及其 `headers` 重定向到用户从未配置的主机上的位置，因此对其加以约束而非信任。 |
+| D639 | 旧版 HTTP+SSE MCP 传输 | **凡校验 `transport` 之处新增 `sse`，与 `stdio`、`http` 并列，覆盖 Plugin SDK 贡献项、用户 MCP 服务器记录与市场目录条目；`sse` 与 `http` 字段相同（`url` / `headers`），URL 策略也相同（ADR 0142）。客户端打开长连接的 `GET` 事件流，把每条消息发往服务端公布的 `endpoint` 事件地址，并从这条已打开的流上读取应答；缺少 endpoint 会在连接预算内让握手失败，流断开则结束会话。公布的 endpoint 必须与所配置 URL 同源，必须通过同一套 `assertUrlAllowed` 策略，且不得跟随重定向，因此服务端无法把会话及其声明的凭据迁移到用户未配置的主机。传输契约与唯一的增量事件流解析器移至 `apps/desktop/electron/main/mcp-transport.ts`。导入时声明 `"type": "sse"` 的条目导入为 `sse`，不再并入 `http`。** | 相当一部分已部署的 MCP 服务器只提供旧版 HTTP+SSE 传输，而 streamable HTTP 客户端无法触达它们——它为每条消息发起 `POST` 并从响应中读取应答，而这类服务器只回 `202`，并把应答投递到一条必须事先打开的流上，于是调用会一直挂到预算耗尽。导入此前还会把 `sse` 并入 `http`，把一份可用配置变成一个在导入阶段不报错的、无法连接的服务器。公布的 endpoint 是远端服务器唯一可能把本会话及其 `headers` 重定向到用户从未配置的主机上的位置，因此对其加以约束而非信任。 |
 
 ## 2026-08-05 — 仅代理模式
 
@@ -4510,7 +4512,7 @@ that amendment are retired by ADR 0268; the upstream work-panel lifecycle stays.
 ## 2026-09-19 —— 远端主机的 SSH 引导（D453）
 
 - 桌面用系统 `ssh` 客户端在用户已能通过 SSH 到达的机器上安装并配对 `pi-host`，因此 `~/.ssh/config`、agent 与跳板机照常生效，应用不持有任何 SSH 密钥；`BatchMode=yes` 让需要交互式密码或口令短语的主机立即以带类型的错误失败，而不是把模态框吊在一个不可见的提示后面。
-- 桌面按远端平台、以自己的版本解析 `pi-host` 包，持有发布随附的 SHA-256，并在任何下载之前拒绝未发布的目标（目前只有 `linux-x64`）。上传的脚本在远端 `$HOME` 下下载、校验并安装该包；SSH 通道上不传输任何可执行字节。
+- 桌面按远端平台、以自己的版本解析 `pi-host` 包，持有发布随附的 SHA-256，并在任何下载之前拒绝未发布的目标（目前为 `linux-x64` 与 `linux-arm64`）。上传的脚本在远端 `$HOME` 下下载、校验并安装该包；SSH 通道上不传输任何可执行字节。
 - 脚本以 `umask 077` 运行并回显 `PI_HOST_READY` / `PI_HOST_PAIRING_TOKEN`，因此一次性配对令牌只存在于工作文件和 SSH 通道上，既不落在全局可读路径，也不出现在 URL 中（安全规格 §3.4）。`PI_HOST_READY.version` 必须与桌面版本一致；不一致为 `HOST_VERSION_MISMATCH`（D375），并在建立转发之前就已检查。
 - 已配对主机的记录改存 SSH 描述符（`metadata.transport = "ssh"`）而非 URL，因为本地转发端口在每次启动间并不稳定；隧道管理器在每次启动时重新建立 `ssh -N -L`，并收编（adopt）引导自己打开的存活转发，使配对只建立一条隧道。描述符在每次读取注册表时都会重新校验，格式不合规时降级为「非 SSH 主机」，而不会用垃圾参数去 spawn `ssh`。
 - `pi-desktop/remoteHost/bootstrap` 加入 `list` / `pair` / `remove`，`connection/pair` 交换被抽成单一的 `exchangePairingToken`，粘贴 URL 与 SSH 引导两条路径共用。
@@ -5155,7 +5157,7 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   stdio 与 streamable HTTP 传输，以及握手逻辑。
 - 导入时声明 `"type": "sse"` 的条目现在导入为 `sse`，不再被并入 `http`；
   后者会生成一个无法连接、且导入阶段不报错的服务器。
-- 决策 D637；ADR [0315](/adr/0315-legacy-http-sse-mcp-transport)
+- 决策 D639；ADR [0319](/adr/0319-legacy-http-sse-mcp-transport)
   修订 D176 / ADR 0038。
 ## 2026-09-29 —— 按工作区上限裁剪的 800×560 窗口最小尺寸（D635）
 
@@ -5180,3 +5182,38 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 权限请求不再携带 `timeoutMs`；pending 快照不再暴露 `expiresAt` 或
   `remainingMs`，UI 也不再显示倒计时。工具自身的命令/插件执行预算以及独立的
   Plan/Goal 和 RACP 审批时限保持不变。见 ADR 0310、issue #1214 与 E2E-017。
+
+## 2026-09-29 —— 移除 Windows 无边框窗口的缩放边缘（D637）
+
+- Windows 主窗口关闭 Electron 厚边框，移除左、下、右侧的原生可见边缘。
+  Electron 43.6 仍保留无边框窗口的原生边缘与角落命中检测，因此不新增渲染层
+  缩放路径或几何 IPC。macOS/Linux 的窗口行为和工作面板的缩放归属不变。
+- Windows 主窗口默认使用 4 DIP 原生圆角，圆角外的像素和命中区域均不存在。
+  获得授权的插件主题可将半径设为 0 至 24 DIP 的整数；撤销主题后恢复 4 DIP。
+  D635 按工作区裁剪的最小尺寸仍然生效。移除厚边框后，主题无法控制原生阴影；
+  外部阴影需要单独决定窗口几何结构。见 ADR 0317 与 E2E-167。
+
+## 2026-10-01 —— 发布原生 Linux arm64 工件（D638）
+
+- 标签发布在 x64 包之外同时发布 Linux arm64 的 AppImage、deb 和 rpm 包。每条通道都在
+  GitHub 托管的原生 Ubuntu 22.04 运行器上运行（`ubuntu-22.04` 与
+  `ubuntu-22.04-arm`），并打包它刚刚构建出的 `pi-desktop-host-core` 二进制，因此 sidecar
+  架构始终与 Electron 应用匹配。两条通道都保持 glibc 2.35 下限。
+- Linux 目标不再固定 `arch`：electron-builder 优先采用配置里的架构列表而不是 CLI
+  参数，把两个架构都固定下来会让每条通道围绕自己的 sidecar 去构建另一个架构。
+  工作流改为传入匹配的 `--x64` / `--arm64` 参数，并在打包前校验 `uname -m`。
+- AppImage 名称带上自己的架构
+  （`PI-Desktop-<version>-linux-x64.AppImage`、
+  `PI-Desktop-<version>-linux-arm64.AppImage`）。因此 x64 资产从之前仅带版本号的名称
+  改名；应用内更新不受影响，因为更新器读取的是已发布的更新源。
+- electron-builder 会按构建的架构为每条 Linux 通道的更新源命名（x64 为
+  `latest-linux.yml`，arm64 为 `latest-linux-arm64.yml`），这正是
+  `electron-updater` 在这些架构上请求的名称，因此两条通道不会互相覆盖更新源，
+  每条通道在上传前校验该名称而不是改名。发布作业可以合并两份工件而不丢失任何更新源。
+- `scripts/export-linux-asar.mjs` 接收通道架构，并从 `linux-unpacked`（x64）或
+  `linux-arm64-unpacked`（arm64）导出 `PI-Desktop-<version>-linux-<arch>.asar`。
+- `release.yml` 的 `pi-host-bundle` 作业构建两个 Linux 架构，`PUBLISHED_TARGETS`
+  发布 `linux-x64` 与 `linux-arm64`，因此 arm64 桌面可以引导 arm64 远端主机（D375 / ADR 0292）。
+- 已知限制：除 Raspberry Pi 板卡之外的 arm64 Linux 设备仍无法采集麦克风，因为
+  `@picovoice/pvrecorder-node` 对 Linux arm64 只认识 Raspberry Pi 的 CPU part。
+  语音转写和应用的其余部分没有架构相关的依赖。见 ADR 0318、issue #1281 与 E2E-192a。

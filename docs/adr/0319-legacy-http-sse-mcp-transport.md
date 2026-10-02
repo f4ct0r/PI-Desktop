@@ -1,4 +1,4 @@
-# ADR 0315: Support the legacy HTTP+SSE MCP transport
+# ADR 0319: Support the legacy HTTP+SSE MCP transport
 
 - Status: Accepted
 - Date: 2026-09-26

@@ -30,7 +30,7 @@ A separately scoped Live Work call may also resolve the bound session's single
 open AskTool question, and only by selecting among the option labels that
 question itself offered; permission and Plan/Goal approvals remain desktop-UI
 decisions (see [Live Voice Work Session Integration](live-work-session.md) and
-[ADR 0314](../../adr/0314-live-voice-spoken-asktool-answers.md)).
+[ADR 0315](../../adr/0315-live-voice-spoken-asktool-answers.md)).
 
 ## Ownership and security
 
@@ -74,9 +74,14 @@ persisted settings:
    consent and grants no work permission.
 3. **Call in progress:** a stable global compact bar shows startup with Cancel,
    connected state with mute/unmute, End and Details, and stopping with an
-   explicit Ending state. It is mounted in persistent AppShell chrome outside
-   the visibility-gated chat and Composer subtree, so in-app navigation cannot
-   hide the call controls.
+   explicit Ending state. The bar is drawn by its own frameless, transparent,
+   always-on-top desktop widget window rather than by AppShell: it floats above
+   other applications, keeps the call visible while the user works elsewhere,
+   and in-app navigation cannot hide the call controls because they are not
+   inside the app window. The widget owns no part of the call: its presses are
+   forwarded to the main window, which stays the owner of the microphone, the
+   media and the call-scoped work, and a failure only that frame can observe is
+   reported back so the bar names it.
    Playback blocking and errors, including playback-resume failure, are visible
    directly in the bar instead of requiring Details. The bar pairs the
    localized message with the verbatim `LIVE_*` error code, so a failure whose

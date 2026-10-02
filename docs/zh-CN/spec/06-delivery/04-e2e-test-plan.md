@@ -92,7 +92,9 @@
   4. 打开详情，检查转录、服务商和工作状态，然后分别通过关闭、点击外部和
      Escape 关闭详情。通话保持连接；通过通话栏恢复暂停的声音，观察恢复失败，
      再明确重试并恢复。
-  5. 在聊天、设置、插件和会话间导航。在 Main 延迟终止和 Renderer 延迟清理的
+  5. 在聊天、设置、插件和会话间导航。通话控件是停靠的桌面挂件窗口：拖动它自身的
+     通话栏，确认位置在这些导航后仍然保留、并会被夹取回工作区内，同时确认主窗口
+     不再绘制任何通话栏。在 Main 延迟终止和 Renderer 延迟清理的
      情况下结束通话或禁用功能，并分别测试两种清理完成顺序。在两者完成前，
      始终显示「结束中」，且不允许再次开始。模拟释放未确认，确认阻止状态可见。
   6. 重新打开准备界面，确认工作授权和上下文确认均未勾选。仅展开区域或选择
@@ -171,7 +173,7 @@ unit/integration 测试；代码 pull request 使用有选择且高价值的 E2E
 
 | 要求 | 详情 |
 |---|---|
-| 平台 | macOS arm64、Intel x64、Windows x64 和 Linux x64 发行目标 (D126/D285) |
+| 平台 | macOS arm64、Intel x64、Windows x64 和 Linux x64 及 arm64 发行目标 (D126/D285、D638 / ADR 0318) |
 | 公司简介 | 干净的 `~/.pi-desktop` 配置文件（无需事先配置） |
 | 固定装置 | 示例项目目录 (`examples/fixtures/sample-project/`) |
 | 示例插件 | 从本地路径加载 `examples/plugins/hello` |
@@ -1743,7 +1745,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 
 #### E2E-195：Linux glibc 低于 2.35 时列出支持的发行版
 
-- **先决条件**：Linux x64 打包应用；本机 glibc 低于 2.35（例如 Ubuntu 20.04 /
+- **先决条件**：Linux x64 或 arm64 打包应用；本机 glibc 低于 2.35（例如 Ubuntu 20.04 /
   Debian 11 / Fedora 35），或测试将 `process.report` 设为 `2.31`。
 - **步骤**：1) 启动 AppImage、deb 或 rpm。2) 观察主窗口和致命横幅。3) 确认
   host-core 没有进入重启循环。
@@ -1814,6 +1816,31 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **状态**：源代码/单元已覆盖（`apps/desktop/test/agent-capability-settings.test.mjs`、
   `apps/desktop/test/subagent-wiring.test.mjs`、`packages/agent-runtime/src/subagent-definitions.test.ts`、
   `packages/shared/src/subagent-presets.test.ts`）；完整 UI 旅程为草稿
+
+#### E2E-192a：Linux arm64 发布通道发布原生 arm64 包
+
+- **先决条件**：`vX.Y.Z` 标签与 `apps/desktop/package.json` 一致；仓库可使用 GitHub
+  的 arm64 `ubuntu-22.04-arm` 运行器。
+- **步骤**：1) 运行标签发布工作流程。2) 确认 arm64 通道运行在
+  `aarch64` 运行器上，且打包出的
+  `target/release/pi-desktop-host-core` 是 AArch64 二进制。3) 检查
+  已发布的 Release 资产中是否有 `PI-Desktop-X.Y.Z-linux-arm64.AppImage`、
+  `pi-desktop_X.Y.Z_arm64.deb`、`pi-desktop-X.Y.Z-aarch64.rpm`、
+  `PI-Desktop-X.Y.Z-linux-arm64.asar`，以及带 `.sha256` 的
+  `pi-host-X.Y.Z-linux-arm64.tar.gz`。4) 确认
+  `latest-linux.yml` 仍列出 x64 AppImage，而
+  `latest-linux-arm64.yml` 列出 arm64 的那个。5) 在 arm64 Linux 机器上安装 arm64
+  的 AppImage、deb 或 rpm 并启动它。
+- **预期**：两个更新源各自只描述一个带架构标记的 AppImage，
+  arm64 包携带 arm64 host-core，应用能在 arm64 Linux 上启动，
+  且合并通道永远不会用 arm64 更新源替换 x64 更新源。
+- **链接规格**：`06-delivery/06-release-runbook.md`、`01-product/01-product-scope.md`
+- **验收**：质量（发布工件与打包兼容性）
+- **里程碑**：M6+
+- **状态**：矩阵、更新源命名、工件命名和 ASAR 导出由单元/源代码契约覆盖
+  （`ci-workflow.test.mjs`、`release-asar.test.mjs`）；
+  原生 arm64 安装仍需运行器验证。麦克风采集在 arm64 Linux 上仍仅限
+  Raspberry Pi (D638 / ADR 0318)。
 
 #### E2E-200：Linux RPM 保留 Wayland 桌面身份
 
@@ -5600,6 +5627,9 @@ eleven-tool-round desktop paths are verified by
 `US-UI-*` 视觉场景（§UI shell 视觉场景）追踪到
 [决策日志 §D](/zh-CN/spec/08-meta/decisions-log) 中的法典平价决策
 而不是 A-H 标准；他们的黄金来源是捕获套件。
+
+发布工件路径由 E2E-192、E2E-192a、E2E-196a、E2E-196b、E2E-196c 和 E2E-200 覆盖
+（质量，M6+）。
 
 ---
 

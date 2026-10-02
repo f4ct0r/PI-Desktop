@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { TFunction } from "i18next";
 import type { LiveStatus } from "@pi-desktop/shared";
 import { IconClose, IconPlay, IconSettings } from "../../../components/icons";
@@ -14,7 +14,6 @@ export function LiveVoicePreparation({ t, status, workSessionId, onClose }: {
   onClose: () => void;
 }) {
   const [shareSelectedSessionContext, setShareSelectedSessionContext] = useState(false);
-  const consentId = useId();
   const binding = selectedLiveBinding(status);
   const readinessMessage = liveReadinessMessage(status);
 
@@ -35,16 +34,16 @@ export function LiveVoicePreparation({ t, status, workSessionId, onClose }: {
           <IconSettings size={16} aria-hidden="true" />
         </TooltipButton>
       </div>
+      {/* Only a blocking cause earns a line here: the panel states what the call
+          will do and what it will not share through its own controls, so a
+          paragraph of prose above Start would only push Start out of reach. */}
       {readinessMessage ? <p className="live-voice-hint" role="status">{t(readinessMessage)}</p> : null}
-      <p className="live-voice-hint" role="status">{t("liveVoice.sessionSelectionVoice")}</p>
       <div className="live-voice-work-setup">
         <Checkbox
           checked={shareSelectedSessionContext}
           label={t("liveVoice.shareContext")}
-          aria-describedby={consentId}
           onChange={(event) => setShareSelectedSessionContext(event.currentTarget.checked)}
         />
-        <p id={consentId} className="live-voice-hint">{t("liveVoice.contextConsent")}</p>
       </div>
       <Button
         type="button"

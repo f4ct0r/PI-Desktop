@@ -1,8 +1,10 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
-import { IPC, type LiveEndReason } from "@pi-desktop/shared";
+import { IPC, type LiveEndReason, type LiveVoiceWidgetAction } from "@pi-desktop/shared";
 import type { LiveCallService as LiveCallServiceImpl, LiveOwner } from "../live-voice/call-service";
 import { liveOwnerFromInvoke } from "../live-voice/owner";
 import type { IpcRegistrar } from "./types";
+import type { LiveVoiceWidget } from "../live-voice/widget-window";
+import type { LiveVoiceWidgetSize } from "../live-voice/widget-geometry";
 
 const END_REASONS = new Set([
   "user-ended", "user-cancelled-start", "window-hidden", "window-navigated", "renderer-gone",
@@ -14,11 +16,23 @@ export function registerLiveVoiceIpc(input: {
   registrar: IpcRegistrar;
   service: LiveCallServiceImpl;
   getMainWindow: () => BrowserWindow | null;
+  /** The docked widget window: not a call owner, but allowed to drive its chrome. */
+  widget: Pick<LiveVoiceWidget, "owns" | "setPresentation" | "requestAction" | "setOwnerState">;
 }): void {
-  const { registrar, service, getMainWindow } = input;
+  const { registrar, service, getMainWindow, widget } = input;
   const owner = (event: IpcMainInvokeEvent): LiveOwner => {
     registrar.assertMainWindowSender(event);
     return liveOwnerFromInvoke(event, getMainWindow());
+  };
+
+  // The widget window is not the call owner: it may only ask the owner frame to
+  // run an action and report the box its own content needs.
+  const assertWidgetSender = (event: IpcMainInvokeEvent): void => {
+    if (!widget.owns(event.sender.id)) {
+      throw Object.assign(new Error("renderer is not the Live Voice widget"), {
+        errorCode: "PERMISSION_DENIED",
+      });
+    }
   };
 
   registrar.handleWithEvent(IPC.invoke.liveVoiceStatus, async (event) => {
@@ -64,6 +78,28 @@ export function registerLiveVoiceIpc(input: {
   });
   registrar.handleWithEvent(IPC.invoke.liveVoiceCancelQueuedOperation, async (event, raw: unknown) => {
     return service.cancelQueuedWorkOperation(owner(event), parseWorkOperationControl(raw));
+  });
+  // The widget's own two channels: it reports the box its content needs and the
+  // actions its buttons ask for. Actions run in the owner frame, never here.
+  registrar.handleWithEvent(IPC.invoke.liveVoiceWidgetVisibility, async (event, raw: unknown) => {
+    assertWidgetSender(event);
+    const presentation = parseWidgetPresentation(raw);
+    widget.setPresentation(presentation.visible, presentation);
+    return { ok: true };
+  });
+  registrar.handleWithEvent(IPC.invoke.liveVoiceWidgetAction, async (event, raw: unknown) => {
+    assertWidgetSender(event);
+    widget.requestAction(parseWidgetAction(raw));
+    return { ok: true };
+  });
+  // What only the owner frame knows about this call: its own failure code (a
+  // refused action is local to the frame that ran it) and whether the bound work
+  // session is waiting on a decision the user has to make elsewhere. Neither is
+  // in the call view, so the widget can only show them if the owner reports them.
+  registrar.handleWithEvent(IPC.invoke.liveVoiceWidgetOwnerState, async (event, raw: unknown) => {
+    registrar.assertMainWindowSender(event);
+    widget.setOwnerState(parseWidgetOwnerState(raw));
+    return { ok: true };
   });
 }
 
@@ -211,4 +247,33 @@ function callId(value: unknown): string {
 
 function invalid(): never {
   throw Object.assign(new Error("Live Voice request is invalid"), { errorCode: "LIVE_PROTOCOL_ERROR" });
+}
+
+const WIDGET_ACTIONS = new Set<LiveVoiceWidgetAction>(["cancel", "mute", "resume", "end", "details", "settings"]);
+
+export function parseWidgetAction(raw: unknown): LiveVoiceWidgetAction {
+  const input = record(raw);
+  exactKeys(input, ["action"]);
+  if (typeof input.action !== "string" || !WIDGET_ACTIONS.has(input.action as LiveVoiceWidgetAction)) return invalid();
+  return input.action as LiveVoiceWidgetAction;
+}
+
+/**
+ * The widget's own measured content box. Sizes outside the bar's own range are
+ * clamped by the window layer, so only the shape is validated here.
+ */
+export function parseWidgetPresentation(raw: unknown): { visible: boolean } & LiveVoiceWidgetSize {
+  const input = record(raw);
+  exactKeys(input, ["visible", "width", "height"]);
+  if (typeof input.visible !== "boolean" || !Number.isFinite(input.width) || !Number.isFinite(input.height)) return invalid();
+  return { visible: input.visible, width: input.width as number, height: input.height as number };
+}
+
+/** The owner frame's own view of the call: its failure code and pending decision. */
+export function parseWidgetOwnerState(raw: unknown): { callId: string; errorCode: string | null; decisionWaiting: boolean } {
+  const input = record(raw);
+  exactKeys(input, ["callId", "errorCode", "decisionWaiting"]);
+  if (input.errorCode !== null && (typeof input.errorCode !== "string" || !input.errorCode || input.errorCode.length > 80)) return invalid();
+  if (typeof input.decisionWaiting !== "boolean") return invalid();
+  return { callId: callId(input.callId), errorCode: input.errorCode as string | null, decisionWaiting: input.decisionWaiting };
 }

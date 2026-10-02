@@ -73,6 +73,10 @@ const languageSource = await readFile(
   new URL("../src/lib/app-language.ts", import.meta.url),
   "utf8",
 );
+const rendererLanguageSource = await readFile(
+  new URL("../src/lib/renderer-language.ts", import.meta.url),
+  "utf8",
+);
 const enLocaleSource = await readFile(
   new URL("../../../packages/i18n/src/locales/en/index.ts", import.meta.url),
   "utf8",
@@ -242,8 +246,8 @@ test("basics gates developer tools behind a persisted developer mode", () => {
 
 test("stored language drives i18n and native labels at startup and on settings change", () => {
   assert.match(languageSource, /export function initLanguageSync/);
-  assert.match(languageSource, /changeLanguage/);
-  assert.match(languageSource, /resolveLocale/);
+  assert.match(rendererLanguageSource, /changeLanguage/);
+  assert.match(rendererLanguageSource, /resolveLocale/);
   assert.match(mainSource, /initLanguageSync\(\)/);
   assert.match(electronMainSource, /catalogs\[resolveLocale\(locale\)\]/);
 });

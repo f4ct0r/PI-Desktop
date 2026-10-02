@@ -47,6 +47,62 @@ read time; their path-scoped memory and filesystem instructions remain readable.
 
 ## 2. File layout
 
+### User-selected storage location (issue #1213)
+
+Settings → General → Storage can select an empty directory on a different
+volume. A selected directory contains `data/` (the complete host/application
+profile) and `browser/` (Chromium default and persistent plugin/browser session
+state). The existing default directories remain unchanged until the user
+explicitly migrates. Project files outside the application profile are not moved.
+
+The original Electron `userData` directory remains the installation identity,
+single-instance lock, and owner-only `storage-location.json` bootstrap anchor.
+Chromium `sessionData` follows `browser/`; this preserves existing localStorage,
+cookies, IndexedDB and persistent partition state by copying the complete old
+profile. An explicit `PI_DESKTOP_DATA_DIR` still overrides the default and disables
+settings-driven maintenance, since such profiles opt out of the installation lock.
+A managed relaunch discards only the environment root published for child services
+through the internal `--pi-managed-storage` argument before reacquiring the lock.
+The location is machine-local and never part of cloud configuration sync.
+
+Migration is cold: the accepted settings action journals pending work, then uses
+existing ordered shutdown to settle turns/outbox and stop writers. The next launch
+opens only a sandboxed, nonpersistent maintenance window before importing the
+application composition root. It inventories bytes/files, checks free space, streams
+the copy, preserves permissions and internal/external links, and SHA-256 verifies
+both source and copied files. An interrupted copy may be retried only with its
+matching ownership marker; nonempty/unrelated destinations and overlapping roots
+are rejected. The stable installation lock prevents competing managed launches.
+
+Rust's offline `--relocate-data <old-root> <copied-root>` mode owns structured
+path relocation in the copied SQLite index, transcripts/revisions/checkpoints,
+outbox, installed plugin registry and agent capability metadata. It does not boot
+RPC, upgrade schemas, recover turns, or sweep scratch. It changes only known
+path-bearing fields under the old root. External projects, dev/builtin plugins,
+narrative text, commands, source code, secrets, and arbitrary plugin-private formats
+are preserved. Credentials and their machine key migrate as bytes with their
+permissions. SQLite ownership stays exclusively in Rust.
+
+Only after validation/relocation succeeds is the flushed bootstrap pointer
+atomically replaced. Errors keep the old profile active and visible in settings;
+retrying the same destination uses the failed job's ownership identity. A crash
+before publication leaves pending work to recopy from the source. An unavailable
+selected volume refuses startup rather than creating a blank profile elsewhere.
+Original directories remain explicit backups. Deleting these requires a separate
+settings confirmation after checking new-location functionality, including plugins
+that may own absolute references the host cannot safely rewrite. Backup cleanup
+preflights every root and protects active storage and bootstrap/lock files.
+
+Cache cleanup is a separate confirmed cold-restart operation. Its filesystem
+allowlist is `cache/`, `plugins/cache/download/`, `plugins/cache/backup/`,
+`openable-attachments/`, and Chromium's Cache/Code Cache/GPU/shader cache
+folders in the default profile and persistent partitions. Intermediate or leaf
+symlinks cannot redirect cleanup, even within the same profile. It never clears
+cookies/localStorage/IndexedDB, transcripts, attachments, secrets, scratch,
+review snapshots, plugin code/data, models, configuration, or logs. Partial cleanup
+failure remains observable, retains active roots, and can be retried.
+
+
 A packaged installation keeps this tree in `~/.pi-desktop`. A development build
 keeps the same tree in `~/.pi-desktop-dev`, because a shipped app and a
 `pnpm dev` host are two installations that have to run at the same time (D599,

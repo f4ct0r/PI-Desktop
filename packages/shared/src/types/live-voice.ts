@@ -314,3 +314,10 @@ export type LiveTranscriptEvent = {
   callId: string;
   segment: LiveTranscriptSegment;
 };
+
+/**
+ * The call actions a docked Live Voice widget can ask for. The widget window
+ * owns no media and is not the Live Voice call owner, so every action travels
+ * to the main window (the owner frame) and runs there.
+ */
+export type LiveVoiceWidgetAction = "cancel" | "mute" | "resume" | "end" | "details" | "settings";

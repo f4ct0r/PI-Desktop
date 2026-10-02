@@ -122,6 +122,7 @@ import type {
   TrustedExtensionUiPrompt,
   TrustedExtensionUiPromptResponse,
   SessionTodoSnapshot,
+  StorageInfo,
 } from "@pi-desktop/shared";
 import {
   defaultCommandShellForPlatform,
@@ -637,6 +638,14 @@ export const api = {
   runImportModelConfigs: (items: ModelConfigImportCandidate[]) =>
     invoke<ImportRunResult>(IPC.invoke.modelConfigImportRun, items),
   getSettings: () => invoke<AppSettings>(IPC.invoke.settingsGet).then(normalizeSettings),
+  getStorageInfo: () => invoke<StorageInfo>(IPC.invoke.storageGet),
+  chooseStorageDirectory: () => invoke<string | null>(IPC.invoke.storageChoose),
+  migrateStorage: (input: { path: string; language: string }) =>
+    invoke<void>(IPC.invoke.storageMigrate, input),
+  clearStorageCache: (input: { language: string }) =>
+    invoke<void>(IPC.invoke.storageClearCache, input),
+  removeStorageBackup: (input: { language: string }) =>
+    invoke<void>(IPC.invoke.storageRemoveBackup, input),
   setSettings: (settings: AppSettings) =>
     invoke(IPC.invoke.settingsSet, validateSettingsWrite(settings)),
   configSyncGetState: () => invoke<ConfigSyncState>(IPC.invoke.configSyncGetState),
@@ -1394,10 +1403,10 @@ export const api = {
       IPC.invoke.windowSetWorkPanelChatWidth,
       { width },
     ),
-  setWindowBackgroundColor: (theme: "light" | "dark", color?: string) =>
-    invoke<{ applied: boolean; theme: "light" | "dark"; color?: string }>(
+  setWindowBackgroundColor: (theme: "light" | "dark", color?: string, cornerRadius?: number) =>
+    invoke<{ applied: boolean; theme: "light" | "dark"; color?: string; cornerRadius?: number | null }>(
       IPC.invoke.windowSetBackgroundColor,
-      { theme, color },
+      { theme, color, cornerRadius },
     ),
   windowControl: (action: WindowControlAction) =>
     invoke<{ maximized: boolean }>(IPC.invoke.windowControl, { action }),

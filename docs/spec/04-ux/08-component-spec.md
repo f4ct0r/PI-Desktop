@@ -81,7 +81,9 @@ Outer frame that positions Topbar, Sidebar, MainChat, and WorkPanel. Owns resize
 - Work panel resize: its inner left-edge handle changes the committed panel
   width in the renderer, so dragging left gives the panel more internal space
   and dragging right returns space to MainChat (§5.4)
-- Window resize: native edges and corners resize the fixed application window;
+- Window resize: native edges and corners on all platforms resize the fixed
+  application window; Windows keeps Electron's frameless hit test without its
+  painted thick-frame rim;
   they never resize or reserve the work panel. Responsive layout follows
   [07-ui-design-system.md](07-ui-design-system.md) §10.1
 
@@ -1107,12 +1109,12 @@ entirely inside the plugin's isolated page:
 | Preview (maximize) | MainChat is unmounted and the panel fills the client area beside the sidebar. The mode is transient and restores the prior panel width and sidebar state when left. |
 | Multiple artifacts | The header keeps a horizontally scrollable tab strip. The fixed `+` action creates a new launcher tab; its buttons open Review and all in-scope plugin views without duplicating open resource tabs. |
 | Session switch | The destination session's retained open state, tabs, active tab, and Browser resource replace the previous session's panel context atomically; neither context is deleted |
-| Resizing | The inner left divider follows anchored pointer delta or keyboard input for the panel target; pointer changes are frame-coalesced and committed in the renderer. Escape, pointer cancellation, or lost capture restores the prior panel width. Native window edges resize only the fixed application window. |
+| Resizing | The inner left divider follows anchored pointer delta or keyboard input for the panel target; pointer changes are frame-coalesced and committed in the renderer. Escape, pointer cancellation, or lost capture restores the prior panel width. Native window edges resize only the fixed application window on every platform. |
 | No workspace | Each tab renders its own "open a project" empty state |
 | Open with no resource | `Cmd/Ctrl + J` reveals the panel without creating a tab, so the body renders the New launcher. Clicking `+` creates an explicit, closable New tab with the same launcher rows. Activating a row from that tab replaces it with or selects the singleton view. Closing the final tab leaves the panel open in the no-resource state. |
 | Constrained work area | The panel is capped by the shared three-column budget inside the existing client area; MainChat never drops below its 450px floor and the expanded sidebar yields at the threshold |
 | New launcher active | The body hosts concise Review and plugin-view buttons. Each row replaces the launcher tab with its destination or activates the existing singleton; the page is independently closeable. |
-| Plugin view active | The body hosts the plugin's own isolated page as a native `WebContentsView`, positioned from the measured surface rect. It remains visible at its full rect while the divider is being resized or a New launcher tab is created; creating a page never pushes the plugin body down or changes its bounds. It is hidden whenever the tab is inactive, the panel is animating, or a panel-wide blocking overlay is open — the same rule the Browser preview follows, since both composite above renderer content. A view whose plugin is disabled, uninstalled, reloaded, or crashed is destroyed; the tab stays and re-opens the page on the next lifecycle event (ADR 0104) |
+| Plugin view active | The body hosts the plugin's own isolated page as a native `WebContentsView`, positioned from the measured surface rect. It remains visible at its full rect while the divider is being resized or a New launcher tab is created; creating a page never pushes the plugin body down or changes its bounds. Embedded plugin documents start with zero root/body margin and border and a transparent background, so the host panel and plugin theme own the visible surface edge. It is hidden whenever the tab is inactive, the panel is animating, or a panel-wide blocking overlay is open — the same rule the Browser preview follows, since both composite above renderer content. A view whose plugin is disabled, uninstalled, reloaded, or crashed is destroyed; the tab stays and re-opens the page on the next lifecycle event (ADR 0104) |
 | Plugin out of scope | A view contributed by a plugin that is not active in the current project disappears from the New launcher when the project changes. Unlike contributed themes, which are one global setting and stay unfiltered, a view is scoped work |
 
 ### 5.4 Interactions
@@ -3166,8 +3168,8 @@ has four presentation states:
 | State | Surface and allowed interaction |
 |---|---|
 | Disabled | No Live Voice or Live Work Composer icons. Enable only in Settings → Voice. |
-| Enabled, idle | One Live Voice icon opens preparation, not a call. Show the exact selected provider and readiness cause, an explicit Start action, the current Composer session as the default work target when present, and separate default-off bounded-context consent. |
-| Call in progress | One global compact bar: Connecting with Cancel; connected with mute/unmute, End, and Details; Ending until Main and renderer cleanup both settle. |
+| Enabled, idle | One Live Voice icon opens preparation, not a call. Show the exact selected provider and its readiness cause, one default-off bounded-context consent checkbox, and an explicit Start action. The panel carries no explanatory prose: only a blocking cause is stated, because a paragraph of text pushes Start out of reach. |
+| Call in progress | One docked desktop widget window: Connecting with Cancel; connected with mute/unmute, End, and Details; Ending until Main and renderer cleanup both settle. |
 | Details open | Deliberately opened transcript/provider/work inspection surface; dismissing it does not end the call. |
 
 - The preparation popup uses shared controls and a localized accessible title.
@@ -3175,7 +3177,7 @@ has four presentation states:
   initialize media, or contact a voice provider. Start is unavailable when the
   exact selected binding is not ready, even if another binding is ready; show
   the actual readiness cause and a Settings action instead of silently falling
-  back to another account.
+  back to another account. Beyond that it carries no explanatory prose.
 - Start defaults to muted and uses the current Composer session as the work
   target after Main validates it against the fresh multi-backend catalog. No
   per-call work-access checkbox or mandatory preselection is required. If there
@@ -3184,16 +3186,31 @@ has four presentation states:
 - Bounded session-context sharing remains a separate, unchecked call consent.
   It reads only the current target's bounded plain-text history and resets when
   the call ends; it does not grant work permissions or approve actions.
-- The compact bar is persistent AppShell chrome outside the visibility-gated
-  chat and Composer subtree. It stays available across Settings, Plugins, and
-  project/session navigation. Feature disable hides the idle icon but not the
-  stopping bar. Late Main terminal events and renderer media release cannot
-  briefly expose a second Start. Unconfirmed media release remains visible as
-  an error, suppresses another Start until restart, and cannot be cleared into a
-  reusable call slot by dismissing the presentation.
-- Playback paused state, Resume sound, playback-resume failure and call errors
-  are visible directly in the bar. Status is announced accessibly; icon-only
-  controls have localized names and tooltips, and muted state is explicit.
+- The compact bar is its own frameless, transparent, always-on-top desktop
+  window, not AppShell chrome. It joins every Space and floats above other
+  applications, so a call stays visible and controllable while the user works
+  elsewhere; in-app navigation cannot hide it, because it is not inside the app
+  window at all. The window is dragged through the bar itself and sized to what
+  the bar draws, and its placement is remembered and clamped to the work area,
+  so a position saved on a wider display can never strand the controls. The
+  status row and its controls stay on one row — a folded status line would read
+  as two rows of chrome — so the bar reports the width it needs and the window
+  grows to it.
+- The widget is a view of the call, never its owner. Every press is forwarded to
+  the main window, which owns the microphone, the media and the call-scoped
+  work, and the resulting state returns through the same authoritative view the
+  owner receives. A failure only the owner frame can observe — a refused mute, a
+  playback retry that failed — is reported so the bar names it in place next to
+  its verbatim `LIVE_*` code; the bar is the only call chrome the user sees. The
+  same report carries whether the bound work session waits on a decision the user
+  has to make in that session's own card, which the widget window cannot see.
+- The main window draws no call bar. It keeps the details surface, which the
+  widget's Details action opens after bringing that window forward, and it stays
+  the frame that runs the actions. Feature disable hides the idle icon; the
+  widget disappears once the call and its renderer cleanup settle. Late Main
+  terminal events and renderer media release cannot briefly expose a second
+  Start. Unconfirmed media release remains visible, cannot be dismissed into a
+  reusable call slot, and suppresses another Start until restart.
 - Details never opens automatically during startup or connection. It owns the
   bounded transient transcript (including an empty state), provider identity,
   current work target, per-operation targets, work actions and results. Target

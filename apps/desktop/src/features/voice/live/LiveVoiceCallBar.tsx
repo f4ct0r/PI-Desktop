@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { type RefObject } from "react";
 import type { TFunction } from "i18next";
 import { IconClose, IconInfo, IconMic, IconMicOff, IconPhoneOff, IconSettings, IconVolume, IconWaveform } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
 import type { LiveVoiceSnapshot } from "./live-call-controller";
-import { useAppStore } from "../../../stores/app-store";
 import { liveVoiceMode, type liveVoiceIssue } from "./live-voice-presentation";
-import { liveWorkDecision, operationAwaitsDecision } from "./live-work-decision";
 
 type CallBarProps = {
   t: TFunction;
   snapshot: LiveVoiceSnapshot;
   issue: ReturnType<typeof liveVoiceIssue>;
+  /**
+   * True while the bound work session waits on a decision the user has to make
+   * elsewhere. The widget window has no session store, so the owner frame
+   * reports this instead of the bar deriving it (live-work-decision).
+   */
+  decisionWaiting: boolean;
   detailsOpen: boolean;
   detailsRef: RefObject<HTMLButtonElement | null>;
   actionPending: "mute" | "playback" | null;
@@ -23,36 +27,18 @@ type CallBarProps = {
   onDismiss: () => void;
 };
 
+/**
+ * The compact call bar, drawn by the docked widget window from the state main
+ * pushes. It is presentation only — the widget owns no media and is not the
+ * call owner, so every button forwards an action instead of reaching a
+ * controller — and it is the only call chrome the user sees. A failure that
+ * outlives a toast is therefore drawn in place next to its verbatim `LIVE_*`
+ * code, because nothing else on screen could name it.
+ */
 export function LiveVoiceCallBar({
-  t, snapshot, issue, detailsOpen, detailsRef, actionPending,
+  t, snapshot, issue, decisionWaiting, detailsOpen, detailsRef, actionPending,
   onCancel, onMute, onEnd, onDetails, onResume, onSettings, onDismiss,
 }: CallBarProps) {
-  // Live Voice failures are one-shot results of the call actions, so they are
-  // reported through the global toast together with their allow-listed code.
-  // Only call states that outlive a toast stay in the bar: the playback hint and
-  // the quarantine that still has to confirm the microphone was released.
-  const issueStaysInline = !issue || issue.warning || issue.code === "LIVE_MEDIA_RELEASE_UNCONFIRMED";
-  const showToast = useAppStore((state) => state.showToast);
-  const reportedIssue = useRef<string | null>(null);
-  // Starting an action clears the mark: a retry that fails the same way is a new
-  // failure and has to speak up again, not be swallowed as a repeat of the last
-  // one. The call itself is preserved across a reconnect, so the key alone
-  // cannot tell the two apart.
-  const previousActionPending = useRef(actionPending);
-  useEffect(() => {
-    const startedAttempt =
-      actionPending !== null && previousActionPending.current === null;
-    previousActionPending.current = actionPending;
-    if (startedAttempt) reportedIssue.current = null;
-    if (issueStaysInline || !issue) {
-      reportedIssue.current = null;
-      return;
-    }
-    if (reportedIssue.current === issue.key) return;
-    reportedIssue.current = issue.key;
-    showToast(`${t(issue.message)} (${issue.code})`, { variant: "error" });
-  }, [actionPending, issue, issueStaysInline, showToast, t]);
-
   const mode = liveVoiceMode(snapshot);
   const call = snapshot.call;
   const status = mode === "stopping" ? "liveVoice.phase.closing"
@@ -65,24 +51,6 @@ export function LiveVoiceCallBar({
                 : "liveVoice.phase.connected";
   const unmute = call?.muted !== false;
   const speaking = mode === "connected" && (call?.assistantSpeaking || (call?.userSpeaking && !call.muted));
-  // A waiting work session outlives a spoken announcement: the user may be
-  // reading another session when the decision appears, and the card that
-  // answers it lives in the bound session, not in this bar.
-  const boundSessionId = call?.workBinding?.workSessionId;
-  const planCheckpoints = useAppStore((state) => state.planCheckpoints);
-  const pendingPermissions = useAppStore((state) => state.pendingPermissions);
-  const pendingAsks = useAppStore((state) => state.pendingAsks);
-  const decisionWaiting = useMemo(
-    () => Boolean(liveWorkDecision({
-      sessionId: boundSessionId,
-      awaiting: operationAwaitsDecision(call?.workOperations, boundSessionId),
-      asks: pendingAsks,
-      permissions: pendingPermissions,
-      planCheckpoints,
-    })),
-    [boundSessionId, call?.workOperations, pendingAsks, pendingPermissions, planCheckpoints],
-  );
-
   return (
     <div className="live-voice-call-bar" data-state={mode}>
       <div className="live-voice-call-row">
@@ -141,7 +109,7 @@ export function LiveVoiceCallBar({
           ) : null}
         </div>
       </div>
-      {issue && issueStaysInline ? (
+      {issue ? (
         <p className={issue.warning ? "live-voice-feedback live-voice-hint" : "live-voice-feedback live-voice-error"} role={issue.warning ? "status" : "alert"}>
           {t(issue.message)}
           {/* The localized sentence alone cannot say whether authentication,

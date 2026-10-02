@@ -136,7 +136,12 @@ The answer also replaces the previous one. A probe that no longer publishes a
 model drops that model's row, so the pane stops painting a model the endpoint
 retired and a hand-typed id stops inheriting its old limits; a row whose source
 is not discovery — the user's own — is never dropped this way, and a configured
-binding stays visible even when the service stops listing it. Cached rows carry
+binding stays visible in the chosen-model pane even when the service stops
+listing it. After a live refresh, the service-model pane displays only rows
+actually served, excluding configured-only rows marked `source: "user"`.
+Catalog enrichment preserves that origin independently of published metadata;
+cache, catalog and manual fallbacks still expose configured rows for editing.
+Cached rows carry
 no endpoint of their own, so a save that moves the base URL or the wire format
 drops the answer the previous endpoint produced, and the next probe records the
 new one. A failed or empty probe is not an answer: it never reaches the cache,
