@@ -1,9 +1,10 @@
 import type { BrowserWindow, IpcMainInvokeEvent, WebFrameMain } from "electron";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import type { WebContents } from "electron";
 import type { LiveOwner } from "./call-service";
-import { getModuleDirectory } from "../module-path";
+import { getModuleDirectory, resolveBuildOutput } from "../module-path";
 
 export function liveOwnerFromInvoke(event: IpcMainInvokeEvent, mainWindow: BrowserWindow | null): LiveOwner {
   const frame = event.senderFrame;
@@ -55,7 +56,7 @@ export function isTrustedRendererUrl(value: string): boolean {
       if (url.search || url.hash) return false;
       return (
         resolve(fileURLToPath(url)) ===
-        resolve(getModuleDirectory(import.meta.url), "../renderer/index.html")
+        resolveBuildOutput(import.meta.url, "../renderer/index.html", existsSync)
       );
     }
     if (url.protocol !== "http:") return false;

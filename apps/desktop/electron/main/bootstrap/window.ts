@@ -2,7 +2,7 @@ import { app, BrowserWindow, nativeTheme, screen, type Tray } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { getModuleDirectory } from "../module-path";
+import { getModuleDirectory, resolveBuildOutput } from "../module-path";
 import {
   APP_NAME,
   builtinWindowBackground,
@@ -200,7 +200,7 @@ export async function createWindow({
         }
       : {}),
     webPreferences: {
-      preload: join(getModuleDirectory(import.meta.url), "../preload/index.cjs"),
+      preload: resolveBuildOutput(import.meta.url, "../preload/index.cjs", existsSync),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -2049,7 +2049,7 @@ export async function createWindow({
     }
   } else {
     await window.loadFile(
-      join(getModuleDirectory(import.meta.url), "../renderer/index.html"),
+      resolveBuildOutput(import.meta.url, "../renderer/index.html", existsSync),
     );
   }
 }

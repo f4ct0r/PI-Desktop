@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut, screen } from "electron";
 import { join } from "node:path";
-import { getModuleDirectory } from "../module-path";
+import { existsSync } from "node:fs";
+import { getModuleDirectory, resolveBuildOutput } from "../module-path";
 import {
   APP_NAME,
   IPC,
@@ -97,7 +98,7 @@ export function createLauncher({
         autoHideMenuBar: true,
         ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
         webPreferences: {
-          preload: join(getModuleDirectory(import.meta.url), "../preload/index.cjs"),
+          preload: resolveBuildOutput(import.meta.url, "../preload/index.cjs", existsSync),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -145,7 +146,7 @@ export function createLauncher({
           await window.loadURL(url.toString());
         } else {
           await window.loadFile(
-            join(getModuleDirectory(import.meta.url), "../renderer/index.html"),
+            resolveBuildOutput(import.meta.url, "../renderer/index.html", existsSync),
             { query: { surface: "plugin-launcher" } },
           );
         }

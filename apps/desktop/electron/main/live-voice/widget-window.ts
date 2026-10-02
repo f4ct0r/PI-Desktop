@@ -1,8 +1,8 @@
 import { app, BrowserWindow, screen, type Rectangle } from "electron";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { IPC, type LiveCallView, type LiveVoiceWidgetAction } from "@pi-desktop/shared";
-import { getModuleDirectory } from "../module-path";
+import { getModuleDirectory, resolveBuildOutput } from "../module-path";
 import { suppressLinuxFramelessSystemMenu } from "../frameless-system-menu";
 
 /**
@@ -157,7 +157,7 @@ export function createLiveVoiceWidget(input: {
         useContentSize: true,
         ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
         webPreferences: {
-          preload: join(getModuleDirectory(import.meta.url), "../preload/index.cjs"),
+          preload: resolveBuildOutput(import.meta.url, "../preload/index.cjs", existsSync),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -202,7 +202,7 @@ export function createLiveVoiceWidget(input: {
           await created.loadURL(url.toString());
         } else {
           await created.loadFile(
-            join(getModuleDirectory(import.meta.url), "../renderer/index.html"),
+            resolveBuildOutput(import.meta.url, "../renderer/index.html", existsSync),
             { query: { surface: "live-voice-widget" } },
           );
         }

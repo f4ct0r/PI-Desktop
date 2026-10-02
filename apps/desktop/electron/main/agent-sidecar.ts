@@ -5,7 +5,7 @@ import {
   type StderrHandler,
 } from "@pi-desktop/host-runtime";
 import { redactValue } from "./logger";
-import { getModuleDirectory } from "./module-path";
+import { resolveFromModuleRoot } from "./module-path";
 
 export type {
   LocalToolHandler,
@@ -17,23 +17,16 @@ export type {
 } from "@pi-desktop/host-runtime";
 
 function resolveSidecarEntry(): string {
-  const candidates = [
-    join(process.resourcesPath || "", "agent-runtime/sidecar.js"),
-    join(
-      getModuleDirectory(import.meta.url),
-      "../../../agent-runtime/dist/sidecar.js",
-    ),
-    join(
-      getModuleDirectory(import.meta.url),
-      "../../../../packages/agent-runtime/dist/sidecar.js",
-    ),
-  ];
-  for (const c of candidates) {
-    if (c && existsSync(c)) return c;
-  }
-  return join(
-    getModuleDirectory(import.meta.url),
-    "../../../../packages/agent-runtime/dist/sidecar.js",
+  // The packaged bundle ships the sidecar inside the app resources; a
+  // development run resolves it from the repository instead.
+  const packaged = join(process.resourcesPath || "", "agent-runtime/sidecar.js");
+  if (packaged && existsSync(packaged)) return packaged;
+  return (
+    resolveFromModuleRoot(
+      import.meta.url,
+      "packages/agent-runtime/dist/sidecar.js",
+      existsSync,
+    ) ?? packaged
   );
 }
 

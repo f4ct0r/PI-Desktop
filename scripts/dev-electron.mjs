@@ -117,12 +117,15 @@ export function prepareMacDevelopmentBundle({
     setPlistString(plistPath, "CFBundleIconFile", "icon.icns");
 
     if (sign) {
-      // macOS no longer supports `codesign --deep` reliably on Electron
-      // app bundles (returns "bundle format is ambiguous" on frameworks).
-      // The bundled frameworks are already signed by Electron; we only
-      // need to re-sign the top-level app since we changed Info.plist.
+      // Electron 43 ships its macOS bundle unsigned, so signing only the
+      // top level fails with "code object is not signed at all" naming an
+      // unsigned Helper. `--deep` re-signs the nested helpers and frameworks
+      // on the way down and seals the bundle in one pass; signing them
+      // separately leaves Squirrel.framework's seal broken. Re-signing is
+      // still required because we rewrote Info.plist.
       execFileSync("codesign", [
         "--force",
+        "--deep",
         "--sign",
         "-",
         "--identifier",
